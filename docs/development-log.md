@@ -1,0 +1,193 @@
+# Utto 开发日志
+
+> 本文件是 Utto 开发过程的唯一运行记录，供 Work、Codex 和用户共同读取与更新。  
+> 产品范围、架构和验收基线以 [`docs/product-v1.md`](product-v1.md) 为准；需求证据以 [`docs/xiaohongshu-research.md`](xiaohongshu-research.md) 为准。  
+> README、Notion 文章和产品基线不再保存逐项开发记录，只链接到本文件。
+
+---
+
+## 1. 文档职责
+
+本文件只记录会随开发变化的内容：
+
+- 当前里程碑、任务和阻塞项；
+- Work 冻结的任务范围与验收结论；
+- Codex 实际修改的文件和实现结果；
+- 实际执行的测试、命令和结果；
+- 关键工程决策及其原因；
+- 已知风险、遗留问题和下一步；
+- Git 提交、分支、Pull Request 或 CI 状态。
+
+本文件不记录：
+
+- 产品愿景和长期需求；
+- 完整技术方案和数据模型；
+- 小红书需求证据；
+- API Key、密码、令牌、真实聊天数据、VPN 或代理地址。
+
+---
+
+## 2. Work 与 Codex 的共同使用规则
+
+### Work
+
+1. 开始任务前读取 `docs/product-v1.md` 和本文件；
+2. 冻结一个任务的目标、允许范围、禁止范围和验收标准；
+3. 在本文件追加一条 `TASK_OPENED` 记录；
+4. Codex 完成后核对实际变更和测试；
+5. 追加 `ACCEPTED`、`REJECTED` 或 `CHANGES_REQUIRED` 记录；
+6. 只有验收通过后，才允许更新顶部“当前状态”。
+
+### Codex
+
+1. 开始任务前读取 `docs/product-v1.md` 和本文件最新内容；
+2. 只实现当前已冻结任务；
+3. 不修改其他执行者的历史记录；
+4. 完成后追加一条 `IMPLEMENTED` 记录；
+5. 记录实际文件、实际命令和实际结果；
+6. 未执行的检查必须写为“未执行”，不得推测通过；
+7. 发现范围冲突或技术栈问题时，先记录并停止越界实现。
+
+### 用户
+
+- 负责本地、Xcode、真机、服务器或第三方平台上的实际验收；
+- 需要时追加 `USER_VERIFIED` 记录；
+- 决定是否提交、推送、合并或进入下一任务。
+
+### 写入顺序
+
+同一任务按以下顺序追加：
+
+```text
+Work：TASK_OPENED
+→ Codex：IMPLEMENTED
+→ 用户：USER_VERIFIED（需要人工运行时）
+→ Work：ACCEPTED / CHANGES_REQUIRED / REJECTED
+```
+
+每次写入前必须先拉取最新版本，避免覆盖另一方刚写入的记录。
+
+---
+
+## 3. 当前状态
+
+最后更新：2026-07-27
+
+| 项目 | 当前状态 |
+|---|---|
+| 当前里程碑 | M0｜工程初始化 |
+| M0-A-01 | 已完成并通过本地验收 |
+| M0-A-02 | 已完成并通过 Docker、API、PostgreSQL 与后端测试验收 |
+| M0-A-03 | 本地实现与检查已完成；等待提交、推送及 GitHub Actions 云端结果确认 |
+| M0-B | 等待可用 macOS/Xcode 环境 |
+| M1 | 未开始 |
+| 当前主要阻塞 | 缺少可执行 M0-B 的 macOS/Xcode 环境 |
+
+当前技术和产品范围仍以 `docs/product-v1.md` 为准。本文件中的状态不得被解释为产品范围变更。
+
+---
+
+## 4. 当前已知环境
+
+- 主开发电脑：Windows 11 家庭版 24H2；
+- 后端 Python：CPython 3.12.13；
+- WSL：WSL 2；
+- Docker Desktop：4.83.0；
+- Docker Engine：29.6.2；
+- Docker Compose：v5.3.1；
+- 测试设备：iPhone，iOS 18.5；
+- iOS 最低部署目标：iOS 18.0；
+- 当前无可用原生 macOS/Xcode 环境。
+
+环境版本变化时只更新本节和新的日志记录，不把版本状态复制到 README、Notion 或需求研究文档。
+
+---
+
+## 5. 开发记录
+
+### 2026-07-27｜M0-A-03｜STATUS_SYNC
+
+- **执行者**：Work / Codex / 用户汇总
+- **状态**：本地实现与检查完成，等待仓库提交、推送和云端 CI
+- **范围**：CI、Windows 启动说明、M0-A 完整验收
+- **已知结果**：
+  - M0-A-01 FastAPI 最小服务与 `GET /v1/health` 已完成；
+  - M0-A-02 PostgreSQL、Docker Compose 与环境变量基线已完成；
+  - API 与数据库容器曾实际达到 `healthy`；
+  - 健康检查返回 `{"status":"ok","service":"utto-server"}`；
+  - Pytest、Ruff 检查、Ruff 格式检查和 `pip check` 已通过本地检查；
+  - PostgreSQL `pg_isready` 与 `SELECT 1` 已通过；
+  - 未创建业务表，未提前实现聊天、人格、记忆或主动消息；
+  - 当前尚需以 Git 提交、推送和 GitHub Actions 结果完成 M0-A 收口。
+- **下一步**：完成提交和推送，查看 GitHub Actions 真实结果，再由 Work 决定 M0-A 是否正式关闭。
+
+### 2026-07-27｜M0-A-02｜ACCEPTED
+
+- **执行者**：Codex 实现，用户与 Work 验收
+- **状态**：通过
+- **范围**：PostgreSQL、Docker Compose、环境变量与容器健康检查
+- **主要产物**：
+  - `.env.example`；
+  - `infra/compose.yaml`；
+  - `server/Dockerfile`；
+  - `server/.dockerignore`；
+  - 相关 `.gitignore` 更新。
+- **验收结果**：
+  - API 和 PostgreSQL 容器均达到健康状态；
+  - PostgreSQL 未向宿主机公开端口；
+  - API 仅绑定本地开发地址；
+  - 未创建 ORM 业务模型、迁移或种子数据；
+  - 真实 `.env` 与敏感数据未提交。
+
+### 2026-07-27｜M0-A-01｜ACCEPTED
+
+- **执行者**：Codex 实现，用户与 Work 验收
+- **状态**：通过
+- **范围**：FastAPI 最小服务与健康检查
+- **主要产物**：
+  - `server/pyproject.toml`；
+  - `server/src/utto_server/__init__.py`；
+  - `server/src/utto_server/main.py`；
+  - `server/tests/test_health.py`；
+  - 根目录 `.gitignore` 相关配置。
+- **验收结果**：
+  - 仅注册 `GET /v1/health`；
+  - 返回 HTTP 200；
+  - JSON 完整比对通过；
+  - 未提前实现后续业务功能。
+
+---
+
+## 6. 日志条目模板
+
+后续 Work、Codex 和用户统一复制以下模板追加，不创建新的日志文件：
+
+```markdown
+### YYYY-MM-DD HH:mm｜任务编号｜状态
+
+- **执行者**：Work / Codex / 用户
+- **状态**：TASK_OPENED / IMPLEMENTED / USER_VERIFIED / ACCEPTED / CHANGES_REQUIRED / REJECTED / BLOCKED
+- **基线提交**：commit SHA；未知时写“未记录”
+- **目标**：
+- **允许修改范围**：
+- **禁止修改范围**：
+- **实际修改文件**：
+- **实际执行命令**：
+- **测试结果**：
+- **未执行检查**：
+- **工程决策**：
+- **风险与遗留问题**：
+- **下一步**：
+```
+
+---
+
+## 7. 状态更新规则
+
+- 顶部“当前状态”只反映已经有日志证据的事实；
+- 任务未经过 Work 验收，不得写成“已完成”；
+- 本地测试通过与 GitHub Actions 通过必须分别记录；
+- 后端验收、Xcode 构建、模拟器、真机、APNs 和 TestFlight 必须分别记录；
+- 产品需求变化先修改 `docs/product-v1.md`，再在本文件记录变更原因；
+- 研究证据变化只修改 `docs/xiaohongshu-research.md`；
+- README 和 Notion 只保留概览与本文件链接，不复制开发流水账。
