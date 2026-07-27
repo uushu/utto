@@ -2,6 +2,8 @@
 
 from fastapi import FastAPI
 
+from utto_server.routers import bootstrap, pairing
+
 app = FastAPI(
     title="utto-server",
     docs_url=None,
@@ -14,3 +16,7 @@ app = FastAPI(
 def health() -> dict[str, str]:
     """Return the process-level health status without external dependencies."""
     return {"status": "ok", "service": "utto-server"}
+
+
+app.include_router(pairing.router)
+app.include_router(bootstrap.router)

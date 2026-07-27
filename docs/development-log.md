@@ -76,11 +76,11 @@ Work：TASK_OPENED
 | 项目 | 当前状态 |
 |---|---|
 | 当前里程碑 | M0｜工程初始化 |
-| M0-A-01 | 已完成并通过本地验收 |
-| M0-A-02 | 已完成并通过 Docker、API、PostgreSQL 与后端测试验收 |
-| M0-A-03 | 本地实现与检查已完成；等待提交、推送及 GitHub Actions 云端结果确认 |
-| M0-B | 等待可用 macOS/Xcode 环境 |
-| M1 | 未开始 |
+| M0-A | 待最终历史验收整理 |
+| M0-B | 未开始 |
+| M1 Backend | 已通过验收（ACCEPTED） |
+| M1 iOS | 未开始 |
+| M2 | 未开始 |
 | 当前主要阻塞 | 缺少可执行 M0-B 的 macOS/Xcode 环境 |
 
 当前技术和产品范围仍以 `docs/product-v1.md` 为准。本文件中的状态不得被解释为产品范围变更。
@@ -155,6 +155,55 @@ Work：TASK_OPENED
   - 返回 HTTP 200；
   - JSON 完整比对通过；
   - 未提前实现后续业务功能。
+
+### 2026-07-27 22:30｜M1-BE｜ACCEPTED
+
+- **执行者**：Claude Code (DeepSeek) 实现，项目 GPT 验收
+- **状态**：ACCEPTED
+- **基线提交**：未提交
+- **目标**：M1 后端功能包候选实现 — 数据库表、Alembic 迁移、配对接口、bootstrap 接口
+- **允许修改范围**：server/src/、server/tests/、server/pyproject.toml、Alembic 配置、.gitignore（SQLite 忽略）
+- **禁止修改范围**：docs/product-v1.md、docs/xiaohongshu-research.md、ios/、infra/、.github/、README.md、Dockerfile、.env.example
+- **实际修改文件**：
+  - server/pyproject.toml（+sqlalchemy, psycopg2-binary, alembic, +CLI entry）
+  - server/src/utto_server/main.py（移除 lifespan create_all，+router 注册）
+  - server/src/utto_server/database.py（新建）
+  - server/src/utto_server/models.py（新建，4 个 ORM 模型 + singleton_key 约束）
+  - server/src/utto_server/schemas.py（新建）
+  - server/src/utto_server/routers/__init__.py（新建）
+  - server/src/utto_server/routers/auth.py（新建，Bearer token 鉴权）
+  - server/src/utto_server/routers/pairing.py（新建，POST /v1/pair/exchange，含 with_for_update 行锁）
+  - server/src/utto_server/routers/bootstrap.py（新建，GET /v1/bootstrap）
+  - server/src/utto_server/cli.py（新建，配对码生成命令）
+  - server/alembic.ini（新建）
+  - server/alembic/env.py（新建）
+  - server/alembic/script.py.mako（新建）
+  - server/alembic/versions/52abeae6c0ae_initial_m1_tables.py（新建）
+  - server/tests/conftest.py（新建）
+  - server/tests/test_pairing.py（新建，10 条）
+  - server/tests/test_bootstrap.py（新建，6 条）
+  - server/tests/test_security.py（新建，6 条）
+  - .gitignore（+utto.db）
+- **测试结果**：
+  - SQLite 自动测试：24 passed
+  - Ruff check：All checks passed!
+  - Ruff format：15 files already formatted
+  - pip check：No broken requirements found
+  - PostgreSQL 迁移：upgrade → downgrade → re-upgrade 均成功
+  - PostgreSQL 集成验证：10/10 通过
+- **未执行检查**：
+  - PostgreSQL 真实并发 FOR UPDATE 验证（SQLite FOR UPDATE 为 no-op，生产环境需验证）
+  - M1 iOS 接入包（需等 M0-B 完成）
+- **工程决策**：
+  - 移除 lifespan create_all：生产 schema 由 Alembic 管理，不在 FastAPI 启动时自动建表
+  - 添加 singleton_key UNIQUE 约束：数据库级防止并发创建多条 relationship
+  - 添加 with_for_update() 行锁：防止配对码并发兑换
+  - device token 使用 secrets.token_urlsafe(48) = 384 bits 熵值，SHA-256 哈希存储
+  - 测试使用文件级 SQLite（避免内存数据库连接池问题）
+- **风险与遗留问题**：
+  - Alembic 配置文件未包含在 Docker 镜像中（需后续更新 Dockerfile）
+  - CRLF 换行符问题仍存在，需统一处理
+- **下一步**：用户授权后提交；后续等待 M0-B 完成后执行 M1 iOS 接入包
 
 ---
 
