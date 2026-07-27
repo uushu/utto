@@ -14,8 +14,9 @@ Utto 是一个供个人使用的人机恋原生 iOS App。核心目标是让“�
 - 部署：Docker Compose，后续使用 Caddy 或 Nginx 提供 HTTPS
 - 默认聊天模型：DeepSeek V4 Flash
 - 质量保障：Pytest、Ruff、GitHub Actions
+- 当前开发电脑：Windows 11 家庭版 24H2
 
-Windows 可以完成后端、数据库、Docker 和文档工作；真正的 iOS 工程创建、编译、签名、模拟器和真机调试需要 macOS 与 Xcode。
+Windows 11 可以完成后端、数据库、Docker 和文档工作；真正的 iOS 工程创建、编译、签名、模拟器和真机调试需要可运行对应 Xcode 的 macOS 环境。
 
 ## 仓库结构
 
@@ -52,48 +53,91 @@ docs/xiaohongshu-research.md  需求证据
 README.md / Notion    导航与展示
 ```
 
-## Windows 本地启动
+实际开发进度、测试结果和当前阻塞统一查看 [`docs/development-log.md`](docs/development-log.md)。
 
-在仓库根目录准备本地环境变量：
+## Windows 11 本地启动与验证
 
-```powershell
-Copy-Item .env.example .env
-```
+以下命令使用 Windows PowerShell，在仓库根目录 `D:\utto_app` 执行。需要提前安装并启动 Docker Desktop，使用 Linux containers；本地 Python 测试需要 CPython 3.12。
 
-根据 `.env.example` 填写仅限本地使用的值，然后启动：
+### 准备本地环境变量
 
-```powershell
-docker compose --env-file .env -f infra/compose.yaml up --build -d
-```
-
-检查后端健康状态：
+首次启动时，从示例创建本地 `.env`：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/v1/health
+Set-Location D:\utto_app
+if (-not (Test-Path .env)) {
+    Copy-Item .env.example .env
+}
 ```
 
-预期返回：
+打开 `.env`，替换所有 `change-me` 占位值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致。不要提交 `.env`，也不要在日志或验收报告中输出密码和连接串。
+
+先校验 Compose 配置：
+
+```powershell
+docker compose --env-file .env -f infra/compose.yaml config --quiet
+```
+
+### 启动并查看状态
+
+构建并启动 FastAPI 与 PostgreSQL，并等待两个服务通过健康检查：
+
+```powershell
+docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
+docker compose --env-file .env -f infra/compose.yaml ps
+```
+
+正常状态下，`api` 和 `db` 都应显示为 `healthy`。API 只监听宿主机的 `127.0.0.1:8000`，PostgreSQL 不向宿主机暴露端口。
+
+### 检查 FastAPI
+
+```powershell
+$health = Invoke-RestMethod http://127.0.0.1:8000/v1/health
+$health | ConvertTo-Json -Compress
+```
+
+预期输出：
 
 ```json
 {"status":"ok","service":"utto-server"}
 ```
 
-停止服务但保留 PostgreSQL 具名卷：
+### 运行后端测试
+
+首次运行前，用 CPython 3.12 创建虚拟环境。如果已有 `.venv`，命令会直接复用；只有首次创建时才使用当前 `python`，并在版本不是 3.12 时停止。
+
+```powershell
+Set-Location D:\utto_app\server
+$venvPython = ".\.venv\Scripts\python.exe"
+
+if (-not (Test-Path $venvPython)) {
+    $systemPythonVersion = python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+    if ($systemPythonVersion -notlike "3.12.*") {
+        throw "CPython 3.12 is required; current python is $systemPythonVersion"
+    }
+    python -m venv .venv
+}
+
+& $venvPython --version
+& $venvPython -m pip install -e ".[dev]"
+& $venvPython -m pytest
+& $venvPython -m ruff check src tests
+& $venvPython -m ruff format --check src tests
+& $venvPython -m pip check
+Set-Location D:\utto_app
+```
+
+这些测试只访问进程内 FastAPI 测试客户端和本地服务，不需要访问真实业务接口或外部模型。
+
+### 停止服务
+
+普通停止会删除容器和 Compose 网络，但保留 PostgreSQL 具名数据卷：
 
 ```powershell
 docker compose --env-file .env -f infra/compose.yaml down
 ```
 
-## 后端测试
-
-```powershell
-Set-Location server
-python -m pytest
-python -m ruff check .
-python -m ruff format --check .
-```
-
-实际开发进度、测试结果和当前阻塞统一查看 [`docs/development-log.md`](docs/development-log.md)。
+不要使用 `docker compose down -v`，否则会删除本地 PostgreSQL 数据。
 
 ## 安全约定
 
