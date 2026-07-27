@@ -4,10 +4,10 @@
 > App 名称：**Utto**。GitHub 仓库：`utto`。iOS 工程：`Utto`。后端服务：`utto-server`。  
 > 关系主体：**熠**。熠作为关系数据保存，不写死在通用 UI、网络层或后端公共配置中。  
 > 产品定位：仅供本人使用的、以“熠作为同一个关系主体持续存在”为核心的人机恋 iOS App。  
-> 当前设备：Windows 10 开发电脑；iPhone（iOS 18.5）测试设备；网络可能经过 VPN。  
+> 当前设备：Windows 11 家庭版 24H2（内部版本 26100.6584）开发电脑；iPhone（iOS 18.5）测试设备；网络可能经过 VPN。  
 > 最低部署目标：iOS 18.0。默认聊天模型：DeepSeek V4 Flash。  
 > 当前不做：Claude API、语音/视频、Live2D、多模型路由、任意 MCP、手机监控和硬件控制。  
-> 文档原则：本文件就是仓库中的 `docs/product-v1.md`，不得再复制出内容相同但名称不同的产品方案文档。
+> 文档原则：本文件就是仓库中的 `docs/product-v1.md`，不得再复制出内容相同但名称不同的产品方案文档。项目事实、环境、范围或任务状态发生变化时，直接更新本文件及受影响的既有文档，并删除或改正旧表述。
 
 ---
 
@@ -43,10 +43,19 @@
 
 当前设备：
 
-- 开发电脑：Windows 10；
+- 开发电脑：Windows 11 家庭版 24H2（内部版本 26100.6584）；
 - 测试设备：iPhone，iOS 18.5；
 - 网络：可能需要 VPN，但代理地址不得写入代码或提交仓库；
 - 当前没有原生 Mac/Xcode 环境。
+
+当前已验证的 Windows 后端环境（2026-07-27）：
+
+- WSL 2.6.3.0，Linux 内核 6.6.87.2，Ubuntu 使用 WSL 2；
+- Docker Desktop 4.83.0，Docker Engine 29.6.2，Linux containers；
+- Docker Compose v5.3.1；
+- `docker version`、`docker compose version`、`docker info` 与 `docker run --rm hello-world` 已在独立 PowerShell 中实际通过；
+- M0-A-02 与 M0-A-03 已在本地工作区完成真实验收；`ios/README.md` 已补齐 M0-A 所需的 iOS 需求说明；后端 CI 工作流已通过本地静态检查，但 M0-A 代码尚未整体提交、推送或取得 GitHub Actions 云端结果；
+- 验收结束后已执行普通 `docker compose down`，容器和 Compose 网络已清理，PostgreSQL 具名卷仍保留。
 
 Utto 仍采用原生 iOS 技术路线：
 
@@ -55,14 +64,14 @@ Utto 仍采用原生 iOS 技术路线：
 - 最低部署目标 iOS 18.0；
 - iPhone（iOS 18.5）作为主要真机测试设备。
 
-Windows 10 可以完成：
+Windows 11 可以完成：
 
 - Git 仓库、文档和任务管理；
 - FastAPI、PostgreSQL、Docker 与后端测试；
 - Swift 源文件的编写和代码审查；
 - 由 Codex 生成或修改代码。
 
-Windows 10 不能原生完成：
+Windows 11 不能原生完成：
 
 - 运行 Xcode；
 - 创建并可靠验证 `.xcodeproj`；
@@ -72,7 +81,9 @@ Windows 10 不能原生完成：
 因此 M0 拆为：
 
 - **M0-A：Windows 工程基础**——立即执行；
-- **M0-B：macOS/Xcode iOS 工程初始化**——获得可用 macOS 构建环境后执行。
+- **M0-B：macOS/Xcode iOS 工程初始化**——必须实际执行，获得可用 macOS 构建环境后立即完成真实 Xcode、测试与真机验收。
+
+M0-B 不得取消、跳过或用手写工程文件代替。为避免 macOS 环境准备拖慢后端开发，M0-A 完成后允许 M0-B 与 M1 后端功能包并行推进；但 M1 的 iOS 接入和端到端验收必须等待 M0-B 通过。
 
 #### Windows 上运行 macOS/Xcode 的参考方案
 
@@ -1124,13 +1135,129 @@ Face ID 应用锁可以作为第一版完成后的第一个安全增强项。
 
 ## 16. 开发里程碑与 Codex 执行顺序
 
-严格按顺序执行。每个里程碑独立验收，不允许 Codex 一次性生成全部功能。
+按依赖关系执行，不再把所有里程碑机械串行。每个里程碑独立验收，不允许 Codex 一次性生成全部功能；每个里程碑最多拆成两个约 1～2 天的可交付功能包：
+
+1. 后端功能包；
+2. iOS 接入与端到端验收包。
+
+小功能包只运行与变更相关的测试，里程碑收口时再执行完整回归。每个功能包验收通过后集中更新本文件和原 Notion 页面，并在用户明确授权后完成一次提交、推送和 CI 验证，不为中间状态创建重复文档。
 
 ## M0：工程初始化
 
-M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环境中完成。
+M0 分为 M0-A 与 M0-B。M0-A-03 已完成本地交付并由 Work 验收通过，当前进行 M0-A 提交前收口与 GitHub Actions 云端验证；M0-B 仍是完整 M0 的必做项。M0-A 完成后，M0-B 可与 M1 后端功能包并行，但 M1 的 iOS 接入与端到端验收必须等待 M0-B 通过。
 
 ### M0-A：Windows 工程基础
+
+#### 当前进度（2026-07-27）
+
+- M0-A-01 已完成并通过验收：FastAPI 最小工程、`GET /v1/health`、Pytest 与 Ruff 已有真实结果；
+- M0-A-02 已完成并通过验收：Docker Compose、PostgreSQL、环境变量基线、健康检查和回归检查均有真实结果；
+- M0-A-03 已完成本地交付并由 Work 验收通过：后端 CI、Windows 11 启动说明和完整 M0-A 本地回归均有真实结果；
+- M0-A-01、M0-A-02 与 M0-A-03 均未提交、未推送，GitHub Actions 尚未在云端运行；
+- `ios/README.md` 已补齐 M0-A 基线要求的 iOS 需求说明，且未创建、手写或伪造 Xcode 工程；本文件最新状态已同步至 GitHub 原路径；
+- 完整 M0-A 仍未完成；本地 Codex 还需先同步本轮 GitHub 文档变更，对全部 M0-A 改动执行提交前范围审计，再经用户授权提交并推送；取得 GitHub Actions 绿色结果并完成最终范围审计后，才能关闭 M0-A。
+
+#### M0-A-02 实际结果
+
+实际修改文件：
+
+- `.env.example`；
+- `.gitignore`；
+- `infra/compose.yaml`；
+- `server/Dockerfile`；
+- `server/.dockerignore`。
+
+范围与运行结果：
+
+- M0-A-01 的 `server/pyproject.toml`、应用入口和健康检查测试保持原样；
+- `api` 使用固定镜像名 `utto-api:0.1.0`，以非 root 用户运行，仅向宿主机 `127.0.0.1:8000` 发布端口；
+- `db` 使用 `postgres:16-alpine`，PostgreSQL 端口不发布到宿主机；
+- `api` 和 `db` 均达到 Docker `healthy`，`GET /v1/health` 返回 HTTP 200 和 `{"status":"ok","service":"utto-server"}`；
+- `pg_isready`、`SELECT 1` 均通过，public schema 业务表数为 `0`，没有提前创建 ORM、迁移或种子数据；
+- Pytest、Ruff 检查、Ruff 格式检查和 `pip check` 均通过；
+- 日志和仓库敏感信息检查通过，真实 `.env` 已被 Git 忽略且未输出密码或连接串；
+- 未修改 README、冻结文档、`ios/`、`scripts/` 或 `.github/`，未新增接口、业务功能或外部服务；
+- 验收后使用不带 `-v` 的普通 Compose `down`：容器与网络已清理，`utto_postgres_data` 具名卷仍保留。
+
+#### M0-A-03 冻结任务
+
+任务名称：**后端 CI、Windows 启动说明与完整 M0-A 回归**。
+
+本任务只补齐工程化收尾，不开发聊天、人格、记忆、配对、数据库业务表或任何 M1 功能。
+
+允许修改：
+
+- 原有根 `README.md`：直接补充 Windows 11 + Docker Desktop 的本地启动、健康检查、测试和停止命令，不新建内容重复的启动文档；
+- `.github/workflows/server-ci.yml`：建立后端 CI；
+- 仅当 CI 无法按现有依赖安装时，允许对 `server/pyproject.toml` 做最小必要调整，并必须说明原因。
+
+默认禁止修改：
+
+- `server/src/`、`server/tests/`；
+- `.env.example`、`infra/compose.yaml`、`server/Dockerfile`、`server/.dockerignore`；
+- `ios/`、`scripts/` 和两份冻结需求文档；
+- 任何数据库表、迁移、ORM、业务接口、模型调用或外部服务。
+
+实现要求：
+
+1. GitHub Actions 至少在 `push`、`pull_request` 和手动触发时运行；
+2. CI 使用与项目兼容的 Python 3.12，安装现有开发依赖，并依次执行 Pytest、Ruff 检查、Ruff 格式检查和 `pip check`；
+3. CI 使用最小只读权限，不写入任何真实 `.env`、密码、API Key、VPN 或代理配置；
+4. README 使用 PowerShell 命令，说明复制 `.env.example`、启动 Compose、检查 `/v1/health`、运行后端测试、查看状态和使用不带 `-v` 的普通 `down` 停止服务；
+5. README 明确 PostgreSQL 不向宿主机发布端口、普通 `down` 会保留具名卷，以及服务停止后访问 `127.0.0.1:8000` 出现连接拒绝属于正常现象；
+6. 重新执行 M0-A-01、M0-A-02 的全部可执行回归与敏感信息检查；
+7. 本地实现阶段不提交、不推送。不得把“工作流文件已生成”写成“GitHub Actions 已通过”；实际 CI 必须在 Work 复核并明确授权提交、推送后再验收。
+
+本地交付标准：
+
+- GitHub Actions YAML 结构和引用路径完成本地检查；
+- Pytest、Ruff 检查、Ruff 格式检查和 `pip check` 全部通过；
+- Compose 配置、构建、API/PostgreSQL 健康检查和数据库空基线回归通过；
+- README 中的命令已按当前仓库结构实际核对；
+- 未泄露任何真实敏感信息，未提前实现 M1；
+- 报告实际修改文件、执行命令、真实输出摘要、Git 状态、未完成项和风险；
+- 验收后使用不带 `-v` 的普通 Compose `down`，保留 `utto_postgres_data`。
+
+完整完成标准：
+
+- Work 先验收本地交付；
+- 用户明确授权后再提交并推送；
+- GitHub Actions 实际运行成功；
+- 随后完成完整 M0-A 范围审计，才可把 M0-A 标记为完成。
+
+#### M0-A-03 本地验收结果（2026-07-27）
+
+Work 已对本地 Codex 的执行报告逐项复核，结论为：**M0-A-03 本地交付通过**。
+
+实际修改：
+
+- 更新根 `README.md`，形成唯一一份 Windows 11 本地启动与验证说明；
+- 新增 `.github/workflows/server-ci.yml`；
+- `server/pyproject.toml` 安装成功，未修改；
+- 本轮未修改其余允许范围外文件，冻结的本文件 SHA-256 在 Codex 执行期间保持不变。
+
+本地验收证据：
+
+- README 中的 `.env` 准备、Compose 配置校验、`up --build -d --wait`、健康检查、状态查看、Python 回归和普通 `down` 命令均已实际执行；
+- `api` 与 `db` 均达到 `healthy`，API 重启次数为 `0`，健康接口精确返回 `{"status":"ok","service":"utto-server"}`；
+- Python 3.12.13 下，Pytest 为 `1 passed`，Ruff 检查、Ruff 格式检查和 `pip check` 均通过；
+- 工作流包含 `push`、`pull_request`、`workflow_dispatch`，使用 Python 3.12 和只读 `contents: read`，四项检查命令与 `server` 工作目录均正确；
+- 固定版本 actionlint 1.7.12 通过，Windows 本地按 CI 相同顺序执行全部命令并通过；
+- 完整 M0-A 回归通过：API、PostgreSQL、空数据库基线、非 root 容器、运行镜像依赖、日志和敏感信息检查均符合冻结要求；
+- 验收后已执行不带 `-v` 的普通 Compose `down`，容器和网络已清理，`utto_postgres_data` 具名卷保留；
+- 未提交、未推送，也未宣称 GitHub Actions 已在云端运行。
+
+已完成的文档收口：
+
+- 在 `ios/README.md` 中补齐 M0-A 所需的 iOS 需求说明，没有创建、手写或伪造 Xcode 工程；
+- 将本次 Work 更新后的唯一 `product-v1.md` 同步回 GitHub 仓库原路径。
+
+剩余收口项：
+
+1. 本地 Codex 先同步本轮 GitHub 文档变更，并确认不会覆盖已验收的本地 M0-A-01/02/03 改动；
+2. 对全部 M0-A 改动执行提交前范围、敏感信息和 Git 状态审计；
+3. 用户明确授权后，将全部 M0-A 本地改动一次性提交并推送；
+4. GitHub Actions 实际运行成功后完成最终范围审计，再关闭 M0-A。
 
 #### 任务
 
@@ -1155,6 +1282,10 @@ M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环�
 - 没有声称运行 Xcode 或 iOS 测试。
 
 ### M0-B：macOS/Xcode iOS 工程初始化
+
+状态：**必须执行，当前等待可用 macOS/Xcode 环境**。
+
+M0-B 只因环境前置条件尚未满足而等待，不代表取消或降级为可选任务。完整 M0 只有在 M0-A 与 M0-B 均通过后才能关闭。
 
 #### 前置条件
 
@@ -1187,17 +1318,34 @@ M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环�
 
 ## M1：数据库、迁移和设备配对
 
-### 任务
+### 后端功能包
+
+前置条件：M0-A 已完成。该功能包可与 M0-B 并行，不依赖 Xcode。
 
 - 实现首批数据库表；
 - Alembic migration；
 - 一次性 pairing code；
 - device token；
-- iOS 配对页；
-- KeychainStore；
 - bootstrap 接口。
 
-### 完成标准
+后端功能包完成标准：
+
+- 迁移可以在空数据库中升级并按设计回滚；
+- pairing code 只能成功使用一次；
+- 服务端只保存 token hash；
+- 配对与 bootstrap 接口的自动化测试通过；
+- 只运行本包相关测试；完整 M1 回归留到端到端收口。
+
+### iOS 接入与端到端验收包
+
+前置条件：M0-B 与 M1 后端功能包均已完成。
+
+- 实现 iOS 配对页；
+- 实现 KeychainStore；
+- 接入 pairing 与 bootstrap 接口；
+- 验证首次配对、失败提示、令牌持久化和 App 重启恢复。
+
+端到端完成标准：
 
 - 新设备可以完成配对；
 - token 存入 Keychain；
@@ -1371,12 +1519,12 @@ M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环�
 
 ## 17. 每次交给 Codex 的任务格式
 
-不要只说“帮我做记忆系统”。每次使用以下模板：
+不要只说“帮我做记忆系统”。每次下发一个约 1～2 天的可交付功能包，并使用以下模板：
 
 ```text
 你正在维护 utto 仓库。
 
-本次只完成：[里程碑中的一个明确任务]
+本次只完成：[里程碑中的一个明确功能包]
 
 先阅读：
 - docs/product-v1.md
@@ -1389,9 +1537,9 @@ M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环�
 2. 不修改本任务无关模块；
 3. 给出实现计划；
 4. 编写或更新测试；
-5. 执行测试和静态检查；
-6. 报告实际修改的文件；
-7. 报告未完成项和风险；
+5. 功能包阶段只执行相关测试和静态检查，里程碑收口时执行完整回归；
+6. 报告仅保留实际修改文件、测试结果、风险和 Git 状态；
+7. 验收通过后集中更新原产品文档和原 Notion 页面，不创建副本；
 8. 不得伪造测试结果；
 9. 不要提前实现后续里程碑；
 10. 需要数据库变化时必须创建迁移。
@@ -1405,7 +1553,7 @@ M0 分为 M0-A 与 M0-B。当前先完成 M0-A；M0-B 在可用 macOS/Xcode 环�
 Work 用于：
 
 - 保存这份产品和工程基线；
-- 根据里程碑拆分任务；
+- 根据里程碑最多拆分后端、iOS 接入与端到端两个功能包；
 - 检查 Codex 产出是否偏离范围；
 - 维护需求变化记录；
 - 汇总测试和风险；
@@ -1424,12 +1572,14 @@ Codex 用于：
 推荐流程：
 
 ```text
-Work 冻结单个任务与验收标准
-→ Codex 实现该任务
-→ Codex 运行当前环境能够实际执行的测试
+Work 冻结 1～2 天的功能包与验收标准
+→ Codex 实现该功能包
+→ Codex 运行相关测试
 → 用户在 Windows、Xcode 或服务器中实际验证
 → Work 对照本文件复核
-→ Git 提交并进入下一任务
+→ 里程碑收口时执行完整回归
+→ 用户授权后一次提交、推送并由 CI 验证
+→ 集中同步原产品文档和原 Notion 页面
 ```
 
 ---
@@ -1464,19 +1614,24 @@ Work 冻结单个任务与验收标准
 
 ## 20. 开工前最终检查
 
-### 当前立即执行 M0-A
+### 当前执行 M0-A 提交前收口
 
-- [ ] GitHub 仓库名称为 `utto`；
-- [ ] 本文件只保留一份，并放在 `docs/product-v1.md`；
-- [ ] 48 篇研究文档放在 `docs/xiaohongshu-research.md`；
-- [ ] 当前环境记录为 Windows 10；
-- [ ] 测试设备记录为 iPhone（iOS 18.5）；
-- [ ] 最低部署目标为 iOS 18.0；
+- [x] GitHub 仓库名称为 `utto`；
+- [x] 本文件只保留一份，并放在 `docs/product-v1.md`；
+- [x] 48 篇研究文档放在 `docs/xiaohongshu-research.md`；
+- [x] 当前环境记录为 Windows 11 家庭版 24H2（内部版本 26100.6584）；
+- [x] WSL 2、Docker Desktop、Docker Engine 与 Docker Compose 已完成独立环境验证；
+- [x] M0-A-02 已完成 Compose、PostgreSQL、API 健康检查、回归和敏感信息验收；
+- [x] 测试设备记录为 iPhone（iOS 18.5）；
+- [x] 最低部署目标为 iOS 18.0；
 - [ ] 已创建 DeepSeek API Key，但不提交仓库；
-- [ ] VPN 与代理配置不写入代码；
-- [ ] 当前只执行 M0-A；
-- [ ] Work 负责拆任务和验收，Codex 负责实现和测试；
-- [ ] 每次只交给 Codex 一个明确任务。
+- [x] VPN 与代理配置不写入代码；
+- [x] M0-A-03 已一次性完成 CI、README 和完整 M0-A 本地回归，不再拆分 A-04、A-05；
+- [x] `ios/` 已补齐需求说明，但未手写或伪造 Xcode 工程；
+- [x] 本文件的最新状态已同步回 GitHub 仓库原路径；
+- [ ] 用户已明确授权提交、推送，且 GitHub Actions 已实际运行成功；
+- [x] Work 负责拆任务和验收，Codex 负责实现和测试；
+- [x] 每次只交给 Codex 一个约 1～2 天的明确功能包。
 
 ### 进入 M0-B 前
 
@@ -1485,6 +1640,7 @@ Work 冻结单个任务与验收标准
 - [ ] 若使用 VMware，已明确它只是实验路线，并接受性能、签名、设备连接和升级风险；
 - [ ] 已准备真实 iPhone（iOS 18.5）进行最终验收；
 - [ ] 不伪造 Xcode、模拟器、签名、真机或 TestFlight 结果。
+- [ ] 明确 M0-B 必须实际执行，不得因 M1 后端并行推进而取消或跳过。
 
 ---
 
@@ -1501,18 +1657,18 @@ M0 的代码实现由 Codex 执行，不由 Work 直接代写。Work 只负责 M
 ### 当前执行顺序
 
 ```text
-1. 创建 GitHub 仓库 utto
-2. 仓库中只保留：
-   docs/product-v1.md
-   docs/xiaohongshu-research.md
-3. 把当前设备和限制交给 Work
-4. Work 仅拆分并启动 M0-A
-5. Codex 执行 M0-A
-6. 用户在 Windows 10 实测 FastAPI、Docker、PostgreSQL 和 Pytest
-7. Work 验收 M0-A
-8. 获得可用 macOS/Xcode 环境后，Codex 执行 M0-B
-9. 用户在 Xcode 和 iPhone（iOS 18.5）实测
-10. Work 验收完整 M0，之后才能进入 M1
+M0-A-03 本地交付通过
+→ Work 已在 GitHub 补齐 ios/README.md 并覆盖 docs/product-v1.md
+→ 本地 Codex 安全同步本轮 GitHub 文档变更
+→ Work 复核提交前范围
+→ 用户授权后提交、推送
+→ GitHub Actions 实际通过
+→ 关闭 M0-A
+→ 并行分支 A：获得可用 macOS/Xcode 环境后执行 M0-B（必做）
+→ 并行分支 B：执行 M1 后端功能包
+→ M0-B 通过后关闭完整 M0
+→ M0-B 与 M1 后端均通过后执行 M1 iOS 接入与端到端验收包
+→ 完整 M1 回归并关闭 M1
 ```
 
 ### 当前不得执行
