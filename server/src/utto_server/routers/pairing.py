@@ -55,12 +55,30 @@ def pair_exchange(body: PairExchangeRequest, db: Session = Depends(get_db)) -> P
         except IntegrityError:
             # Another concurrent request created the relationship first.
             db.rollback()
-            # Re-query everything fresh since the session was rolled back.
+
+            # Re-acquire pairing code row lock and re-validate.
+            # The rollback released the original lock; another transaction
+            # may have consumed this pairing code in the meantime.
             pairing = (
-                db.query(PairingCode).filter(PairingCode.id == pairing.id).with_for_update().first()
+                db.query(PairingCode)
+                .filter(
+                    PairingCode.id == pairing.id,
+                    PairingCode.used_at.is_(None),
+                    PairingCode.expires_at > now,
+                )
+                .with_for_update()
+                .first()
             )
-            relationship = db.query(Relationship).filter(Relationship.status == "active").first()
+
+            if pairing is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Invalid, expired, or already used pairing code",
+                )
+
             pairing.used_at = now
+
+            relationship = db.query(Relationship).filter(Relationship.status == "active").first()
 
     # Generate device token — 48 URL-safe random bytes = 384 bits of entropy.
     device_token = secrets.token_urlsafe(48)

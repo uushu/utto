@@ -76,12 +76,14 @@ Work：TASK_OPENED
 | 项目 | 当前状态 |
 |---|---|
 | 当前里程碑 | M0｜工程初始化 |
-| M0-A | 待最终历史验收整理 |
+| M0-A | ACCEPTED（已关闭） |
 | M0-B | 未开始 |
 | M1 Backend | 已通过验收（ACCEPTED） |
 | M1 iOS | 未开始 |
 | M2 | 未开始 |
 | 当前主要阻塞 | 缺少可执行 M0-B 的 macOS/Xcode 环境 |
+
+M0-A 全部验收项已完成：GitHub Actions 云端 CI 已通过；Docker Compose、PostgreSQL、FastAPI health、Pytest/Ruff/pip check、安全扫描和 iOS 目录边界均已验证。M0-A 已关闭。
 
 当前技术和产品范围仍以 `docs/product-v1.md` 为准。本文件中的状态不得被解释为产品范围变更。
 
@@ -155,6 +157,51 @@ Work：TASK_OPENED
   - 返回 HTTP 200；
   - JSON 完整比对通过；
   - 未提前实现后续业务功能。
+
+### 2026-07-27 23:00｜M0-A｜ACCEPTED（已关闭）
+
+- **执行者**：Claude Code 审计，项目 GPT 验收
+- **状态**：ACCEPTED
+- **目标**：M0-A 最终历史验收 — 确认所有 M0-A 验收项完成，M0-A 正式关闭
+- **验收结果**：
+  - Git 状态正常，main 与 origin/main 一致，工作区干净
+  - Docker Compose 验证通过（api + db healthy）
+  - PostgreSQL pg_isready / SELECT 1 通过
+  - FastAPI /v1/health 精确返回
+  - Pytest 24 passed，Ruff / pip check 通过
+  - GitHub Actions 云端 CI 已确认通过
+  - 安全扫描通过（无密钥、VPN 或代理泄露）
+  - iOS 目录符合 M0-A 边界（无伪造 .xcodeproj）
+  - 文档职责清晰，开发流水仅记录于 development-log.md
+- **已处理遗留项**：无
+- **下一步**：M0-B（需 macOS/Xcode 环境）；M1 Backend 并发安全修复
+
+### 2026-07-27 23:30｜M1-BE-CONCURRENCY｜IMPLEMENTED / WAITING REVIEW
+
+- **执行者**：Claude Code (DeepSeek)
+- **状态**：IMPLEMENTED / WAITING REVIEW
+- **基线提交**：未提交
+- **目标**：修复 M1 Backend pairing exchange 的 IntegrityError 恢复路径并发风险
+- **问题原因**：
+  - `except IntegrityError` 中 `db.rollback()` 释放了事务锁
+  - rollback 后 `pairing.used_at = now` 被回滚
+  - 原代码重查 pairing code 时仅按 ID 查询，未重新过滤 `used_at IS NULL` 和 `expires_at > now`
+  - 若另一事务在 rollback 间隙消费了同一配对码，可能绕过一次性限制
+- **修复方案**：
+  - rollback 后重新以 `with_for_update()` 锁定 pairing code 行
+  - 重查时加回 `used_at.is_(None)` 和 `expires_at > now` 过滤条件
+  - 若配对码已失效（被消费或过期），返回 403 而非继续创建 device
+- **修改文件**：
+  - server/src/utto_server/routers/pairing.py（IntegrityError 恢复路径）
+  - server/tests/test_concurrency_pg.py（新建，4 条 PostgreSQL 并发测试）
+- **测试结果**：
+  - SQLite 自动测试：24 passed，1 skipped（concurrency_pg 跳过）
+  - PostgreSQL 并发测试：4 passed（同码二会话、异码二会话、过期恢复、已用恢复）
+  - Ruff check：All checks passed!
+  - Ruff format：16 files already formatted
+  - pip check：No broken requirements found
+- **未执行检查**：多线程真实并发测试（Python threading + PostgreSQL FOR UPDATE 在 Docker 容器中有 test client 依赖冲突，以顺序双会话测试覆盖等价逻辑）
+- **下一步**：项目 GPT 验收
 
 ### 2026-07-27 22:30｜M1-BE｜ACCEPTED
 
