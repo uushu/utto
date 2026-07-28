@@ -1,7 +1,6 @@
 """PostgreSQL real concurrent tests for M1 Backend pairing exchange.
 
 Uses a real uvicorn server + threading.Barrier for true concurrent HTTP requests.
-Each thread makes real HTTP calls to the pair_exchange endpoint via urllib.
 
 Usage:
     pytest tests/test_concurrency_pg.py -v
@@ -12,6 +11,7 @@ Requires DATABASE_URL pointing to a PostgreSQL instance.
 import json
 import os
 import secrets
+import socket
 import threading
 import time
 import urllib.error
@@ -32,29 +32,46 @@ if not PG_URL.startswith("postgresql"):
 _pg_engine = create_engine(PG_URL)
 PgSession = sessionmaker(bind=_pg_engine, autoflush=False, autocommit=False)
 
-_SERVER_PORT = 18765
-_BASE_URL = f"http://127.0.0.1:{_SERVER_PORT}"
+# Hard timeout for all thread joins.
+_THREAD_TIMEOUT = 15
 
 
-def _start_server():
-    """Start uvicorn in a daemon thread."""
-    os.environ["DATABASE_URL"] = PG_URL
-    uvicorn.run(
-        "utto_server.main:app",
-        host="127.0.0.1",
-        port=_SERVER_PORT,
-        log_level="error",
-    )
+def _find_free_port() -> int:
+    """Return a free TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+_server_port: int = 0
+_base_url: str = ""
+_server_instance: uvicorn.Server | None = None
 
 
 @pytest.fixture(scope="module")
 def _server():
-    """Start the FastAPI server once for all tests in this module."""
-    t = threading.Thread(target=_start_server, daemon=True)
+    """Start uvicorn on a dynamic port; shut down cleanly after all tests."""
+    global _server_port, _base_url, _server_instance
+
+    _server_port = _find_free_port()
+    _base_url = f"http://127.0.0.1:{_server_port}"
+
+    os.environ["DATABASE_URL"] = PG_URL
+    config = uvicorn.Config(
+        "utto_server.main:app",
+        host="127.0.0.1",
+        port=_server_port,
+        log_level="error",
+    )
+    _server_instance = uvicorn.Server(config)
+
+    t = threading.Thread(target=_server_instance.run, daemon=True)
     t.start()
+
+    # Wait for server readiness.
     for _ in range(30):
         try:
-            req = urllib.request.Request(f"{_BASE_URL}/v1/health")
+            req = urllib.request.Request(f"{_base_url}/v1/health")
             with urllib.request.urlopen(req, timeout=1) as resp:
                 if resp.status == 200:
                     break
@@ -62,8 +79,14 @@ def _server():
             pass
         time.sleep(0.5)
     else:
-        raise RuntimeError("Server did not start")
+        _server_instance.should_exit = True
+        raise RuntimeError("Server did not start within 15 seconds")
+
     yield
+
+    # Clean shutdown.
+    _server_instance.should_exit = True
+    t.join(timeout=5)
 
 
 @pytest.fixture(scope="function")
@@ -75,10 +98,10 @@ def _pg_schema():
 
 
 def _http_post(path: str, body: dict) -> tuple[int, dict | None]:
-    """Make an HTTP POST request, return (status_code, json_body or None)."""
+    """Make an HTTP POST request; return (status_code, json_body or None)."""
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
-        f"{_BASE_URL}{path}",
+        f"{_base_url}{path}",
         data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -91,7 +114,7 @@ def _http_post(path: str, body: dict) -> tuple[int, dict | None]:
 
 
 def _exchange(code: str, barrier: threading.Barrier, results: list):
-    """Make a real HTTP request to pair_exchange, synchronized by barrier."""
+    """HTTP pair_exchange, synchronized by barrier. Appends status + optional token."""
     barrier.wait(timeout=10)
     try:
         status, body = _http_post("/v1/pair/exchange", {"pairing_code": code})
@@ -103,15 +126,17 @@ def _exchange(code: str, barrier: threading.Barrier, results: list):
 
 
 class TestRealConcurrentSameCode:
-    """Test 1: Same code, two threads barrier-synchronized — only one wins."""
+    """Test 1: Same pairing code, two concurrent threads — only one wins."""
 
     def test_concurrent_same_code_only_one_200(self, _server, _pg_schema):
         session = PgSession()
-        code = f"conc1-{secrets.token_hex(4)}"
-        expires = datetime.now(UTC) + timedelta(minutes=15)
-        session.add(PairingCode(code=code, expires_at=expires))
-        session.commit()
-        session.close()
+        try:
+            code = f"conc1-{secrets.token_hex(4)}"
+            expires = datetime.now(UTC) + timedelta(minutes=15)
+            session.add(PairingCode(code=code, expires_at=expires))
+            session.commit()
+        finally:
+            session.close()
 
         results = []
         barrier = threading.Barrier(2, timeout=10)
@@ -120,8 +145,11 @@ class TestRealConcurrentSameCode:
         t2 = threading.Thread(target=_exchange, args=(code, barrier, results))
         t1.start()
         t2.start()
-        t1.join()
-        t2.join()
+        t1.join(timeout=_THREAD_TIMEOUT)
+        t2.join(timeout=_THREAD_TIMEOUT)
+
+        assert not t1.is_alive(), "Thread 1 hung"
+        assert not t2.is_alive(), "Thread 2 hung"
 
         statuses = [r for r in results if isinstance(r, int)]
         tokens = [r for r in results if isinstance(r, str) and r and "error" not in r]
@@ -129,10 +157,12 @@ class TestRealConcurrentSameCode:
         assert len(tokens) == 1, f"Expected 1 token, got {len(tokens)}"
 
         verify = PgSession()
-        assert verify.query(Device).count() == 1
-        pc = verify.query(PairingCode).filter(PairingCode.code == code).first()
-        assert pc.used_at is not None
-        verify.close()
+        try:
+            assert verify.query(Device).count() == 1
+            pc = verify.query(PairingCode).filter(PairingCode.code == code).first()
+            assert pc.used_at is not None
+        finally:
+            verify.close()
 
 
 class TestRealConcurrentDifferentCodes:
@@ -140,13 +170,15 @@ class TestRealConcurrentDifferentCodes:
 
     def test_concurrent_different_codes_both_200(self, _server, _pg_schema):
         session = PgSession()
-        code_a = f"conc2a-{secrets.token_hex(4)}"
-        code_b = f"conc2b-{secrets.token_hex(4)}"
-        expires = datetime.now(UTC) + timedelta(minutes=15)
-        session.add(PairingCode(code=code_a, expires_at=expires))
-        session.add(PairingCode(code=code_b, expires_at=expires))
-        session.commit()
-        session.close()
+        try:
+            code_a = f"conc2a-{secrets.token_hex(4)}"
+            code_b = f"conc2b-{secrets.token_hex(4)}"
+            expires = datetime.now(UTC) + timedelta(minutes=15)
+            session.add(PairingCode(code=code_a, expires_at=expires))
+            session.add(PairingCode(code=code_b, expires_at=expires))
+            session.commit()
+        finally:
+            session.close()
 
         results = []
         barrier = threading.Barrier(2, timeout=10)
@@ -155,8 +187,11 @@ class TestRealConcurrentDifferentCodes:
         t2 = threading.Thread(target=_exchange, args=(code_b, barrier, results))
         t1.start()
         t2.start()
-        t1.join()
-        t2.join()
+        t1.join(timeout=_THREAD_TIMEOUT)
+        t2.join(timeout=_THREAD_TIMEOUT)
+
+        assert not t1.is_alive(), "Thread 1 hung"
+        assert not t2.is_alive(), "Thread 2 hung"
 
         statuses = [r for r in results if isinstance(r, int)]
         tokens = [r for r in results if isinstance(r, str) and r and "error" not in r]
@@ -164,44 +199,57 @@ class TestRealConcurrentDifferentCodes:
         assert len(tokens) == 2, f"Expected 2 tokens, got {len(tokens)}"
 
         verify = PgSession()
-        assert verify.query(Relationship).count() == 1, "Only one relationship"
-        assert verify.query(Device).count() == 2, "Two devices"
-        for c in [code_a, code_b]:
-            pc = verify.query(PairingCode).filter(PairingCode.code == c).first()
-            assert pc.used_at is not None, f"Code {c} should be consumed"
-        verify.close()
+        try:
+            assert verify.query(Relationship).count() == 1, "Only one relationship"
+            assert verify.query(Device).count() == 2, "Two devices"
+            for c in [code_a, code_b]:
+                pc = verify.query(PairingCode).filter(PairingCode.code == c).first()
+                assert pc.used_at is not None, f"Code {c} should be consumed"
+        finally:
+            verify.close()
 
 
 class TestRealRecoveryRace:
-    """Test 3: Code consumed during IntegrityError recovery gap."""
+    """Test 3: Two threads race with different codes. Both must succeed."""
 
-    def test_code_consumed_during_recovery_gets_403(self, _server, _pg_schema):
-        """Thread A creates relationship; Thread C consumes code-B before
-        Thread B can try it. Thread B must get 403."""
+    def test_concurrent_first_pairing_two_codes_both_200(self, _server, _pg_schema):
+        """Both threads start with no relationship; one hits IntegrityError
+        and recovers. Both must finish with 200, 1 relationship, 2 devices."""
         session = PgSession()
-        code_a = f"racea-{secrets.token_hex(4)}"
-        code_b = f"raceb-{secrets.token_hex(4)}"
-        expires = datetime.now(UTC) + timedelta(minutes=15)
-        session.add(PairingCode(code=code_a, expires_at=expires))
-        session.add(PairingCode(code=code_b, expires_at=expires))
-        session.commit()
-        session.close()
+        try:
+            code_a = f"racea-{secrets.token_hex(4)}"
+            code_b = f"raceb-{secrets.token_hex(4)}"
+            expires = datetime.now(UTC) + timedelta(minutes=15)
+            session.add(PairingCode(code=code_a, expires_at=expires))
+            session.add(PairingCode(code=code_b, expires_at=expires))
+            session.commit()
+        finally:
+            session.close()
 
-        # A creates relationship with code_a
-        status_a, _ = _http_post("/v1/pair/exchange", {"pairing_code": code_a})
-        assert status_a == 200
+        results = []
+        barrier = threading.Barrier(2, timeout=10)
 
-        # C consumes code_b first
-        status_c, _ = _http_post("/v1/pair/exchange", {"pairing_code": code_b})
-        assert status_c == 200
+        t1 = threading.Thread(target=_exchange, args=(code_a, barrier, results))
+        t2 = threading.Thread(target=_exchange, args=(code_b, barrier, results))
+        t1.start()
+        t2.start()
+        t1.join(timeout=_THREAD_TIMEOUT)
+        t2.join(timeout=_THREAD_TIMEOUT)
 
-        # B tries code_b after it was consumed → 403
-        status_b, _ = _http_post("/v1/pair/exchange", {"pairing_code": code_b})
-        assert status_b == 403
+        assert not t1.is_alive(), "Thread 1 hung"
+        assert not t2.is_alive(), "Thread 2 hung"
+
+        statuses = [r for r in results if isinstance(r, int)]
+        tokens = [r for r in results if isinstance(r, str) and r and "error" not in r]
+        assert sorted(statuses) == [200, 200], f"Got {sorted(statuses)}"
+        assert len(tokens) == 2, f"Expected 2 tokens, got {len(tokens)}"
 
         verify = PgSession()
-        assert verify.query(Relationship).count() == 1
-        assert verify.query(Device).count() == 2
-        pc_b = verify.query(PairingCode).filter(PairingCode.code == code_b).first()
-        assert pc_b.used_at is not None
-        verify.close()
+        try:
+            assert verify.query(Relationship).count() == 1
+            assert verify.query(Device).count() == 2
+            for c in [code_a, code_b]:
+                pc = verify.query(PairingCode).filter(PairingCode.code == c).first()
+                assert pc.used_at is not None
+        finally:
+            verify.close()

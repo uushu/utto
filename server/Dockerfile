@@ -1,14 +1,16 @@
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.12.13-slim-bookworm AS builder
 
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /build
 
 COPY pyproject.toml ./
 COPY src ./src
 
-RUN python -m pip wheel --wheel-dir /wheels .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip wheel --wheel-dir /wheels .
 
 
 FROM python:3.12.13-slim-bookworm AS runtime
