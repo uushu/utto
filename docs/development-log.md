@@ -71,14 +71,14 @@ Work：TASK_OPENED
 
 ## 3. 当前状态
 
-最后更新：2026-07-27
+最后更新：2026-07-28
 
 | 项目 | 当前状态 |
 |---|---|
 | 当前里程碑 | M0｜工程初始化 |
 | M0-A | ACCEPTED（已关闭） |
 | M0-B | 未开始 |
-| M1 Backend | CHANGES_REQUIRED（等待真实 PostgreSQL 并发验证） |
+| M1 Backend | ACCEPTED |
 | M1 iOS | 未开始 |
 | M2 | 未开始 |
 | 当前主要阻塞 | 缺少可执行 M0-B 的 macOS/Xcode 环境 |
@@ -106,6 +106,29 @@ M0-A 全部验收项已完成：GitHub Actions 云端 CI 已通过；Docker Comp
 ---
 
 ## 5. 开发记录
+
+### 2026-07-28｜M1-BE｜ACCEPTED
+
+- **执行者**：项目 GPT 验收
+- **状态**：ACCEPTED
+- **基线提交**：f2fd9baa32326a2dc521602729e19dbbe4d3ea01
+- **目标**：M1 Backend 真实 PostgreSQL 并发验证与正式验收
+- **验收结果**：
+  - 项目 GPT 已检查 GitHub 上的实际业务代码和测试代码；
+  - pairing code 在 IntegrityError rollback 后会重新加锁（`with_for_update()`）；
+  - 恢复路径重新校验 `used_at IS NULL` 和 `expires_at > now`；
+  - relationship 按 `singleton_key == "1"` 恢复查询；
+  - 独立 PostgreSQL 测试服务（`infra/compose.test.yaml`）验证通过；
+  - PostgreSQL 真实 HTTP 并发测试：3 passed；
+  - SQLite 回归测试：24 passed in 7.67s；
+  - Ruff check：All checks passed；
+  - 同一 pairing code 并发只能成功一次（200 + 403）；
+  - 不同 pairing code 并发最终只有一个 relationship、两个 devices。
+- **非阻塞说明**：
+  - 当前测试验证了真实 PostgreSQL 并发最终行为；
+  - 测试尚未通过钩子或计数器确定性断言 IntegrityError except 分支进入次数；
+  - 该项作为后续测试增强，不阻塞 M1 Backend 验收。
+- **下一步**：M1 iOS（等待 M0-B macOS/Xcode 环境）
 
 ### 2026-07-27｜M0-A-03｜STATUS_SYNC
 
