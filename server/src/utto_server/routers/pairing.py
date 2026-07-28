@@ -78,7 +78,14 @@ def pair_exchange(body: PairExchangeRequest, db: Session = Depends(get_db)) -> P
 
             pairing.used_at = now
 
-            relationship = db.query(Relationship).filter(Relationship.status == "active").first()
+            # Re-query the singleton relationship by its known key.
+            relationship = db.query(Relationship).filter(Relationship.singleton_key == "1").first()
+
+            if relationship is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Server configuration error: relationship not found",
+                )
 
     # Generate device token — 48 URL-safe random bytes = 384 bits of entropy.
     device_token = secrets.token_urlsafe(48)

@@ -78,7 +78,7 @@ Work：TASK_OPENED
 | 当前里程碑 | M0｜工程初始化 |
 | M0-A | ACCEPTED（已关闭） |
 | M0-B | 未开始 |
-| M1 Backend | 已通过验收（ACCEPTED） |
+| M1 Backend | CHANGES_REQUIRED（等待真实 PostgreSQL 并发验证） |
 | M1 iOS | 未开始 |
 | M2 | 未开始 |
 | 当前主要阻塞 | 缺少可执行 M0-B 的 macOS/Xcode 环境 |
