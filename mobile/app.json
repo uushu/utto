@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Utto",
+    "slug": "utto",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.uushu.utto",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.uushu.utto"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
