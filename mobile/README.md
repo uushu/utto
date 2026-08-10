@@ -68,15 +68,14 @@ http://<电脑局域网IP>:8000/v1/health
 
 ## 3. 生成一次性配对码
 
-在后端 Python 环境中执行项目现有 CLI：
+后端数据库运行在 Docker 网络里，所以直接在 `api` 容器中执行现有 CLI，确保配对码写入当前 PostgreSQL：
 
 ```powershell
-Set-Location D:\utto_app\server
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\utto-pairing-code.exe
+Set-Location D:\utto_app
+docker compose --env-file .env -f infra/compose.yaml exec api utto-pairing-code
 ```
 
-记下终端输出的一次性配对码。
+记下终端输出的一次性配对码。它默认 15 分钟过期且只能使用一次。
 
 ## 4. 在 iPhone 上运行
 
