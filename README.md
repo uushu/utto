@@ -99,10 +99,11 @@ Invoke-RestMethod http://127.0.0.1:8000/v1/health
 
 ### 2. 生成一次性配对码
 
+配对码必须写入 Docker 中当前运行的 PostgreSQL，因此直接在 `api` 容器执行：
+
 ```powershell
-Set-Location D:\utto_app\server
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\utto-pairing-code.exe
+Set-Location D:\utto_app
+docker compose --env-file .env -f infra/compose.yaml exec api utto-pairing-code
 ```
 
 ### 3. 启动 Expo 客户端
