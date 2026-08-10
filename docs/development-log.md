@@ -9,22 +9,25 @@
 - Work 拆任务验收，Codex 实现，用户授权提交
 - 状态流：TASK_OPENED → IMPLEMENTED → ACCEPTED / BLOCKED
 - 只记在本文件，不创建同类文档；不记录密码、令牌、代理地址
+- 未实际执行的测试必须明确写“未执行”，不得推测通过
 
 ---
 
 ## 当前状态
 
-最后更新：2026-07-28
+最后更新：2026-08-11
 
 | 项目 | 状态 |
 |---|---|
-| 当前里程碑 | M0｜工程初始化 |
+| 当前里程碑 | M1 Mobile｜Expo 客户端纵向切片 |
 | M0-A | ACCEPTED |
-| M0-B | macOS 安装中 |
-| M1 Backend | ACCEPTED |
-| M1 iOS | 未开始 |
-| M2 | 未开始 |
-| 当前阻塞 | Xcode 尚未安装，SwiftUI 工程尚未构建验收 |
+| M0-B 原生 iOS / Xcode | PAUSED，不再阻塞第一版 |
+| M1 Backend | ACCEPTED；本分支新增 `/v1/chat` 待回归 |
+| M1 Mobile | IMPLEMENTED / WAITING USER VERIFY |
+| M2 长期记忆 | 未开始 |
+| 当前阻塞 | 需要在 Windows 本地完成 npm/typecheck、后端回归及 Expo Go iPhone 真机验收 |
+
+客户端路线已从 SwiftUI / Xcode-first 调整为 React Native + Expo + TypeScript。`mobile/` 为第一版主线；`ios/` 保留为未来原生路线，不再要求先完成 macOS/Xcode 环境才能继续产品开发。
 
 ---
 
@@ -32,14 +35,58 @@
 
 - **宿主机**：Windows 11 家庭版 24H2，WSL 2
 - **后端**：CPython 3.12.13，Docker Desktop 4.83.0，Docker Compose v5.3.1
-- **iOS**：iPhone iOS 18.5，最低部署目标 iOS 18.0
-- **macOS 虚拟机**：VMware Workstation Pro 17.6.4，OC4VM 3.0.0 AMD，工作目录 `D:\macOS-VM\Utto-Sequoia`
-- **恢复介质**：Sequoia Recovery VMDK（`sequoia-recovery.vmdk`，2.3 GB），已验证
-- macOS 安装中，Xcode 尚未安装
+- **移动端主线**：Expo SDK 54、React Native 0.81、React 19.1、TypeScript
+- **测试设备**：iPhone；开发阶段使用 Expo Go
+- **原生 iOS 环境研究**：VMware + OpenCore + Sequoia Recovery 已完成到 Recovery 启动；该路线暂停
 
 ---
 
 ## 开发记录
+
+### 2026-08-11｜M1-MOBILE-EXPO｜IMPLEMENTED / WAITING USER VERIFY
+
+**目标**：停止让 Xcode 环境阻塞 Utto，直接建立可在 Windows 开发、iPhone Expo Go 真机运行的 AI 陪伴客户端纵向切片。
+
+**客户端实现**：
+- 新增 `mobile/`：Expo SDK 54 + React Native + TypeScript
+- 首次配对页：`POST /v1/pair/exchange`
+- 设备令牌使用 `expo-secure-store`
+- 启动同步：`GET /v1/bootstrap`
+- 聊天页：真实调用 `POST /v1/chat`
+- 本机近期聊天：AsyncStorage
+- 一级入口：聊天、记忆、关系、设置
+- 记忆页当前明确为占位，不伪装为已完成长期记忆
+
+**后端实现**：
+- 新增鉴权接口 `POST /v1/chat`
+- 服务器读取 `DEEPSEEK_API_KEY`，客户端不接触模型密钥
+- 默认模型 `deepseek-v4-flash`
+- 最近 20 条客户端消息作为当前临时上下文
+- 若存在锁定 PersonaVersion，则把身份、用户模型、关系定义、核心性格和约定注入 system prompt
+- 新增 DeepSeek 超时、HTTP 错误、异常响应处理
+- 新增 `server/tests/test_chat.py`
+
+**基础设施与文档**：
+- Compose 可通过 `UTTO_API_BIND=0.0.0.0` 在可信局域网给 iPhone 开发调试；默认仍为 `127.0.0.1`
+- `.env.example` 增加 DeepSeek 配置但不包含真实 Key
+- `.gitignore` 增加 Node / Expo 产物
+- `README.md`、`ios/README.md`、`mobile/README.md` 已切换/说明新的第一版客户端路线
+
+**本次未声称完成**：
+- 未在用户 Windows 机器执行 `npm install` / `npm run typecheck`
+- 未在用户环境运行后端完整 Pytest/Ruff 回归
+- 未通过 Expo Go 在 iPhone 实际扫码启动
+- 未实际调用用户的 DeepSeek API Key
+- 未实现服务端 Message 表、聊天永久存储、长期记忆、主动消息或 APNs
+
+**下一步验收顺序**：
+1. Windows 拉取本分支并执行移动端安装与 typecheck
+2. 后端执行 Pytest/Ruff
+3. Docker Compose 启动并生成一次性配对码
+4. iPhone Expo Go 扫码，完成配对与真实对话
+5. 通过后再合并到 `main`
+
+---
 
 ### 2026-07-28｜M0-B-ENV｜ACCEPTED
 
@@ -53,7 +100,7 @@
 
 **产物**：`D:\macOS-VM\Utto-Sequoia\sequoia-recovery.vmdk`
 
-**下一步**：macOS 安装完成后装 Xcode，执行 M0-B 工程验收。
+**后续决策**：2026-08-11 起该原生 iOS/Xcode 路线暂停，不再作为第一版阻塞项。
 
 ---
 
@@ -75,8 +122,6 @@
 
 **遗留**：Alembic 配置未包含在 Docker 镜像；CRLF 统一处理。
 
-**下一步**：M1 iOS（等 M0-B 环境）。
-
 ---
 
 ### 2026-07-27｜M0-A｜ACCEPTED
@@ -84,16 +129,14 @@
 **目标**：工程初始化 — FastAPI 最小服务、PostgreSQL + Docker Compose、CI、安全扫描、iOS 目录边界。
 
 **产物**：
-- `server/src/utto_server/main.py`，仅注册 `GET /v1/health`
+- `server/src/utto_server/main.py`
 - `infra/compose.yaml`，`server/Dockerfile`，`.env.example`
 - `.gitignore` 相关配置
 
-**最终验收**（项目 GPT）：
+**最终验收**：
 - Docker Compose（api + db）healthy
 - `GET /v1/health` → `{"status":"ok","service":"utto-server"}`
 - Pytest 24 passed，Ruff / pip check 通过
 - GitHub Actions 通过，安全扫描通过
 - Git 状态正常，main 与 origin/main 一致
-- PostgreSQL 不对外暴露端口，未建业务表
-
-**下一步**：M0-B（macOS/Xcode）；M1 Backend 开发。
+- PostgreSQL 不对外暴露端口
