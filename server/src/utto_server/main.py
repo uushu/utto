@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from utto_server.routers import bootstrap, pairing
+from utto_server.routers import bootstrap, chat, pairing
 
 app = FastAPI(
     title="utto-server",
@@ -20,3 +20,4 @@ def health() -> dict[str, str]:
 
 app.include_router(pairing.router)
 app.include_router(bootstrap.router)
+app.include_router(chat.router)
