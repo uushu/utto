@@ -9,11 +9,14 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${UTTO_API_PORT:?UTTO_API_PORT is required}:8000"
+      - "${UTTO_API_BIND:-127.0.0.1}:${UTTO_API_PORT:?UTTO_API_PORT is required}:8000"
     networks:
       - backend
     healthcheck:
