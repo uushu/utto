@@ -1,67 +1,68 @@
 # Utto
 
-Utto 是一个供个人使用的人机恋原生 iOS App。核心目标是让“熠”作为同一个关系主体持续存在，而不是每次打开 App 都成为新的会话或角色。
+Utto 是一个供个人使用的 AI 陪伴 App。核心目标是让“熠”作为同一个关系主体持续存在，而不是每次打开 App 都成为新的会话或角色。
 
 第一版聚焦稳定文字聊天、单一关系身份、人格连续性、可控记忆、数据迁移、受控主动消息与隐私安全。
 
-## 技术路线
+## 当前技术路线
 
-- iOS：Swift、SwiftUI，最低支持 iOS 18.0
-- 测试设备：iPhone（iOS 18.5）
-- 后端：Python 3.12、FastAPI、Uvicorn
+2026-08-11 起，第一版客户端主线从 SwiftUI / Xcode 调整为 **React Native + Expo + TypeScript**。原因不是放弃 iOS，而是先把“在 iPhone 上真实使用 Utto”与本地 Xcode/macOS 环境解耦。
+
+- 移动端：Expo SDK 54、React Native、TypeScript
+- 测试设备：iPhone；开发阶段通过 Expo Go 真机运行
+- 后端：Python、FastAPI、Uvicorn
 - 数据库：PostgreSQL、SQLAlchemy、Alembic
-- 后台任务：独立 Worker、APScheduler
-- 部署：Docker Compose，后续使用 Caddy 或 Nginx 提供 HTTPS
 - 默认聊天模型：DeepSeek V4 Flash
-- 质量保障：Pytest、Ruff、GitHub Actions
-- 当前开发电脑：Windows 11 家庭版 24H2
+- 部署：Docker Compose；公网部署阶段使用 HTTPS
+- 质量保障：Pytest、Ruff、GitHub Actions；移动端增加 TypeScript typecheck
+- 当前开发电脑：Windows 11
 
-Windows 11 可以完成后端、数据库、Docker 和文档工作；真正的 iOS 工程创建、编译、签名、模拟器和真机调试需要可运行对应 Xcode 的 macOS 环境。
+原生 SwiftUI 路线保留在 [`ios/`](ios/) 作为历史/未来选项，但不再阻塞第一版产品开发。
 
 ## 仓库结构
 
 ```text
 utto/
-├── ios/       # SwiftUI iOS 客户端
+├── mobile/    # 当前主线：React Native + Expo 客户端
+├── ios/       # 暂停的原生 SwiftUI / Xcode 路线
 ├── server/    # FastAPI 后端
 ├── infra/     # PostgreSQL、Docker 与部署配置
 ├── docs/
-│   ├── product-v1.md           # 唯一产品与工程基线
+│   ├── product-v1.md           # 产品范围与工程基线；技术栈变更需继续同步
 │   ├── xiaohongshu-research.md # 需求研究与证据
-│   └── development-log.md      # Work、Codex 与用户共享开发日志
-├── scripts/   # 开发、测试、迁移与运维脚本
-├── .github/   # GitHub Actions 与仓库配置
-└── README.md  # 仓库入口、运行方式与文档导航
+│   └── development-log.md      # 实际开发进度与验收记录
+├── scripts/
+├── .github/
+└── README.md
 ```
 
-Git 不跟踪空目录，因此尚未开始实现的目录可以暂时使用 `.gitkeep` 保留。
-
-## 文档职责
-
-- [`README.md`](README.md)：仓库入口。说明项目是什么、如何运行、目录结构和从哪里继续阅读；不记录逐项开发流水。
-- [`docs/product-v1.md`](docs/product-v1.md)：唯一产品与工程基线。记录产品目标、固定技术栈、架构、里程碑定义、验收标准和明确不做的范围。
-- [`docs/xiaohongshu-research.md`](docs/xiaohongshu-research.md)：需求证据。记录 48 篇小红书内容的分析、需求来源和优先级依据。
-- [`docs/development-log.md`](docs/development-log.md)：唯一开发运行记录。Work、Codex 和用户在同一文件中记录任务、实际变更、测试、验收、阻塞和下一步。
-- Notion 文章《Utto｜熠》：面向阅读和展示的项目说明，只保留产品介绍、工程概览和开发日志链接，不作为代码任务或进度事实的权威来源。
-
-文档优先级：
+## 当前已打通的纵向链路
 
 ```text
-docs/product-v1.md    产品范围与验收基线
-docs/development-log.md  当前进度与执行事实
-docs/xiaohongshu-research.md  需求证据
-README.md / Notion    导航与展示
+iPhone / Expo Go
+      │
+      ├── POST /v1/pair/exchange
+      │       └── 一次性配对码 → 设备访问令牌
+      │
+      ├── GET /v1/bootstrap
+      │       └── 关系主体 + 当前人格
+      │
+      └── POST /v1/chat
+              │
+              ▼
+        FastAPI Server
+              │
+              ▼
+      DeepSeek V4 Flash
 ```
 
-实际开发进度、测试结果和当前阻塞统一查看 [`docs/development-log.md`](docs/development-log.md)。
+移动端设备令牌保存在系统安全存储；DeepSeek API Key 只存在服务器环境变量中，不下发到手机。
 
-## Windows 11 本地启动与验证
+## Windows + iPhone 快速运行
 
-以下命令使用 Windows PowerShell，在仓库根目录 `D:\utto_app` 执行。需要提前安装并启动 Docker Desktop，使用 Linux containers；本地 Python 测试需要 CPython 3.12。
+### 1. 准备后端环境
 
-### 准备本地环境变量
-
-首次启动时，从示例创建本地 `.env`：
+在仓库根目录：
 
 ```powershell
 Set-Location D:\utto_app
@@ -70,78 +71,82 @@ if (-not (Test-Path .env)) {
 }
 ```
 
-打开 `.env`，替换所有 `change-me` 占位值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致。不要提交 `.env`，也不要在日志或验收报告中输出密码和连接串。
+编辑 `.env`：
 
-先校验 Compose 配置：
-
-```powershell
-docker compose --env-file .env -f infra/compose.yaml config --quiet
+```dotenv
+POSTGRES_PASSWORD=<本地数据库密码>
+DATABASE_URL=postgresql://utto:<同一个数据库密码>@db:5432/utto
+UTTO_API_BIND=0.0.0.0
+DEEPSEEK_API_KEY=<你的 DeepSeek API Key>
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
-### 启动并查看状态
+`UTTO_API_BIND=0.0.0.0` 只用于让同一可信局域网中的 iPhone 访问开发机。不要把开发端口直接暴露到公网。
 
-构建并启动 FastAPI 与 PostgreSQL，并等待两个服务通过健康检查：
+启动：
 
 ```powershell
 docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
 docker compose --env-file .env -f infra/compose.yaml ps
 ```
 
-正常状态下，`api` 和 `db` 都应显示为 `healthy`。API 只监听宿主机的 `127.0.0.1:8000`，PostgreSQL 不向宿主机暴露端口。
-
-### 检查 FastAPI
+健康检查：
 
 ```powershell
-$health = Invoke-RestMethod http://127.0.0.1:8000/v1/health
-$health | ConvertTo-Json -Compress
+Invoke-RestMethod http://127.0.0.1:8000/v1/health
 ```
 
-预期输出：
+### 2. 生成一次性配对码
 
-```json
-{"status":"ok","service":"utto-server"}
-```
-
-### 运行后端测试
-
-首次运行前，用 CPython 3.12 创建虚拟环境。如果已有 `.venv`，命令会直接复用；只有首次创建时才使用当前 `python`，并在版本不是 3.12 时停止。
+配对码必须写入 Docker 中当前运行的 PostgreSQL，因此直接在 `api` 容器执行：
 
 ```powershell
-Set-Location D:\utto_app\server
-$venvPython = ".\.venv\Scripts\python.exe"
-
-if (-not (Test-Path $venvPython)) {
-    $systemPythonVersion = python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
-    if ($systemPythonVersion -notlike "3.12.*") {
-        throw "CPython 3.12 is required; current python is $systemPythonVersion"
-    }
-    python -m venv .venv
-}
-
-& $venvPython --version
-& $venvPython -m pip install -e ".[dev]"
-& $venvPython -m pytest
-& $venvPython -m ruff check src tests
-& $venvPython -m ruff format --check src tests
-& $venvPython -m pip check
 Set-Location D:\utto_app
+docker compose --env-file .env -f infra/compose.yaml exec api utto-pairing-code
 ```
 
-这些测试只访问进程内 FastAPI 测试客户端和本地服务，不需要访问真实业务接口或外部模型。
+### 3. 启动 Expo 客户端
 
-### 停止服务
-
-普通停止会删除容器和 Compose 网络，但保留 PostgreSQL 具名数据卷：
+需要 Node.js 20.19+。iPhone 安装 Expo Go，然后：
 
 ```powershell
-docker compose --env-file .env -f infra/compose.yaml down
+Set-Location D:\utto_app\mobile
+npm install
+npm run typecheck
+npx expo start
 ```
 
-不要使用 `docker compose down -v`，否则会删除本地 PostgreSQL 数据。
+手机和电脑保持在同一可信局域网。首次进入 Utto 时填写：
+
+```text
+Utto API: http://<Windows 局域网 IPv4>:8000
+配对码: <刚生成的一次性配对码>
+```
+
+更完整的真机步骤见 [`mobile/README.md`](mobile/README.md)。
+
+## 当前边界
+
+目前这一版是“可以开始真实使用”的客户端纵向切片，不等于完整 v1：
+
+- 已有设备配对、Bearer 鉴权、关系 bootstrap、真实 DeepSeek 聊天；
+- 近期聊天目前缓存在手机 AsyncStorage；
+- 服务器端 Message 表、完整聊天持久化和跨设备同步尚未实现；
+- 长期记忆抽取/召回、记忆管理、主动消息、APNs、导入导出仍待实现；
+- `mobile/` 的 Expo Go 路线用于快速产品验证；准备 TestFlight / App Store 时再切换到 EAS Development Build / EAS Build。
+
+## 文档职责
+
+- [`README.md`](README.md)：仓库入口和当前运行路线。
+- [`docs/development-log.md`](docs/development-log.md)：实际进度、测试、阻塞和下一步的唯一运行记录。
+- [`docs/product-v1.md`](docs/product-v1.md)：产品范围与工程基线；其中旧 SwiftUI/Xcode 技术描述正在随本次路线调整同步，若与本 README 的 2026-08-11 客户端路线冲突，以最新开发日志和本 README 的迁移状态为准，直到基线文档完成整体改写。
+- [`docs/xiaohongshu-research.md`](docs/xiaohongshu-research.md)：需求研究与证据。
 
 ## 安全约定
 
-- 不向仓库提交 DeepSeek API Key、Apple 密钥、配对码、访问令牌、真实聊天数据或真实 `.env`。
-- API Key 只保存在服务器环境变量或 Docker Secret 中。
+- 不提交 DeepSeek API Key、Apple 密钥、配对码、访问令牌、真实聊天数据或真实 `.env`。
+- DeepSeek API Key 只保存在服务器环境变量或 Secret 中。
 - iPhone 只保存可撤销的设备访问令牌。
-- 代理地址、VPN 配置和个人服务器凭据不得写入代码、日志或公开文档。
+- PostgreSQL 不向宿主机公开端口。
+- 本地手机调试允许 API 监听可信局域网；正式部署必须使用 HTTPS 和明确的网络访问控制。
