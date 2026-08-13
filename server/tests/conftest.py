@@ -13,10 +13,17 @@ from utto_server.main import app
 from utto_server.models import Base, PairingCode
 
 # File-based SQLite for reliable test isolation (avoids in-memory connection-pool issues).
-TEST_DB_DIR = tempfile.mkdtemp(prefix="utto_test_")
+_test_db_directory = tempfile.TemporaryDirectory(prefix="utto_test_")
+TEST_DB_DIR = _test_db_directory.name
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_DIR}/test.db"
 _test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
 TestSessionLocal = sessionmaker(bind=_test_engine, autoflush=False, autocommit=False)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Release the test database and remove its temporary directory."""
+    _test_engine.dispose()
+    _test_db_directory.cleanup()
 
 
 @pytest.fixture

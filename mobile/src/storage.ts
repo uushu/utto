@@ -6,6 +6,14 @@ import type { ChatMessage } from './types';
 const TOKEN_KEY = 'utto.deviceToken';
 const API_URL_KEY = 'utto.apiUrl';
 const MESSAGES_KEY = 'utto.messages';
+const AVATARS_KEY = 'utto.chatAvatars';
+
+export type ChatAvatars = {
+  assistant: string | null;
+  user: string | null;
+};
+
+const defaultChatAvatars: ChatAvatars = { assistant: null, user: null };
 
 export async function loadSession(): Promise<{
   apiUrl: string | null;
@@ -65,4 +73,25 @@ export async function saveMessages(messages: ChatMessage[]): Promise<void> {
 
 export async function clearMessages(): Promise<void> {
   await AsyncStorage.removeItem(MESSAGES_KEY);
+}
+
+export async function loadChatAvatars(): Promise<ChatAvatars> {
+  const raw = await AsyncStorage.getItem(AVATARS_KEY);
+  if (!raw) {
+    return defaultChatAvatars;
+  }
+
+  try {
+    const value = JSON.parse(raw) as Partial<ChatAvatars>;
+    return {
+      assistant: typeof value.assistant === 'string' ? value.assistant : null,
+      user: typeof value.user === 'string' ? value.user : null,
+    };
+  } catch {
+    return defaultChatAvatars;
+  }
+}
+
+export async function saveChatAvatars(avatars: ChatAvatars): Promise<void> {
+  await AsyncStorage.setItem(AVATARS_KEY, JSON.stringify(avatars));
 }

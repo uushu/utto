@@ -21,6 +21,9 @@ web-build/
 # Local SQLite database (dev/test only)
 utto.db
 
+# Local visual-model weights. Kept beside the app for easy backup, never committed.
+models/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db
