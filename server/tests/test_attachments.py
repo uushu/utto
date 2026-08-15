@@ -472,6 +472,106 @@ def test_vision_timeout_resets_and_retries(db, monkeypatch) -> None:
     ]
 
 
+class _CpuFallbackVisionClient:
+    requests: list[dict[str, Any]] = []
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        pass
+
+    def __enter__(self) -> "_CpuFallbackVisionClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def post(self, url: str, **kwargs: Any) -> _RecoveringVisionResponse:
+        type(self).requests.append({"url": url, **kwargs})
+
+        if url.endswith("/v1/chat/completions"):
+            return _RecoveringVisionResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "@@@@@@@@"
+                            }
+                        }
+                    ]
+                }
+            )
+
+        if url.endswith("/api/generate"):
+            return _RecoveringVisionResponse({"done": True})
+
+        if url.endswith("/api/chat"):
+            return _RecoveringVisionResponse(
+                {
+                    "message": {
+                        "content": "CPU 回退成功识别到一只猫。"
+                    }
+                }
+            )
+
+        raise AssertionError(f"Unexpected vision URL: {url}")
+
+
+def test_corrupt_vision_falls_back_to_cpu_ollama(db, monkeypatch) -> None:
+    image = io.BytesIO()
+    Image.new("RGB", (4, 4), (12, 34, 56)).save(image, format="JPEG")
+    attachment = Attachment(
+        id="n" * 32,
+        relationship_id="r" * 32,
+        filename="cat.jpg",
+        mime_type="image/jpeg",
+        size_bytes=len(image.getvalue()),
+        content=image.getvalue(),
+    )
+    db.add(attachment)
+    db.commit()
+
+    _CpuFallbackVisionClient.requests = []
+
+    monkeypatch.setenv(
+        "UTTO_VISION_BASE_URL",
+        "http://host.docker.internal:11434/v1",
+    )
+    monkeypatch.setenv(
+        "UTTO_VISION_MODEL",
+        "qwen2.5vl:3b",
+    )
+    monkeypatch.setattr(
+        attachments_module.httpx,
+        "Client",
+        _CpuFallbackVisionClient,
+    )
+
+    context = attachment_context(
+        db,
+        "r" * 32,
+        [attachment.id],
+    )
+
+    assert "CPU 回退成功识别到一只猫。" in context
+
+    assert [request["url"] for request in _CpuFallbackVisionClient.requests] == [
+        "http://host.docker.internal:11434/v1/chat/completions",
+        "http://host.docker.internal:11434/api/generate",
+        "http://host.docker.internal:11434/v1/chat/completions",
+        "http://host.docker.internal:11434/api/chat",
+    ]
+
+    cpu_request = _CpuFallbackVisionClient.requests[-1]
+
+    assert cpu_request["json"]["keep_alive"] == 0
+    assert cpu_request["json"]["stream"] is False
+    assert cpu_request["json"]["options"]["num_gpu"] == 0
+    assert cpu_request["json"]["options"]["num_ctx"] == 4096
+    assert (
+        cpu_request["json"]["options"]["num_predict"]
+        == MAX_VISION_RESPONSE_TOKENS
+    )
+
+
 def test_audio_transcript_is_injected_for_the_chat_model(db, monkeypatch) -> None:
     attachment = Attachment(
         id="j" * 32,
