@@ -4,6 +4,7 @@ import base64
 import binascii
 import csv
 import io
+import logging
 import os
 import re
 import tempfile
@@ -11,6 +12,7 @@ import zipfile
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree
 
 import httpx
@@ -25,6 +27,8 @@ from pypdf.errors import PdfReadError, PdfStreamError
 from sqlalchemy.orm import Session
 
 from utto_server.models import Attachment
+
+logger = logging.getLogger(__name__)
 
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_EXTRACTED_CHARACTERS = 24_000
@@ -43,6 +47,7 @@ MAX_VIDEO_FRAMES = 3
 MAX_VIDEO_DECODE_FRAMES_PER_SAMPLE = 180
 MAX_VISION_RESPONSE_TOKENS = 320
 MAX_AUDIO_TRANSCRIPT_CHARACTERS = 24_000
+LOCAL_OLLAMA_HOSTS = {"127.0.0.1", "::1", "host.docker.internal", "localhost"}
 TEXT_MIME_PREFIXES = ("text/",)
 TEXT_MIME_TYPES = {
     "application/json",
@@ -454,6 +459,154 @@ def _video_content_parts(attachment: Attachment, remaining: int) -> list[dict[st
             container.close()
 
 
+def _content_text(content: object) -> str:
+    """Normalize OpenAI-compatible text content without accepting malformed output."""
+    if isinstance(content, str):
+        return content.strip()[:MAX_EXTRACTED_CHARACTERS]
+    if isinstance(content, list):
+        text = "\n".join(
+            str(part.get("text", "")).strip()
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+        return text.strip()[:MAX_EXTRACTED_CHARACTERS]
+    return ""
+
+
+def _vision_response_text(data: object) -> str:
+    """Read one standard OpenAI-compatible vision completion."""
+    try:
+        content = data["choices"][0]["message"]["content"]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return _content_text(content)
+
+def _request_vision_text(
+    client: httpx.Client,
+    *,
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, object],
+) -> str:
+    """Request one OpenAI-compatible vision completion without aborting recovery."""
+    try:
+        response = client.post(
+            url,
+            headers=headers,
+            json=payload,
+        )
+        response.raise_for_status()
+        return _vision_response_text(response.json())
+    except (httpx.HTTPError, ValueError):
+        logger.warning("Vision completion request failed", exc_info=True)
+        return ""
+
+def _usable_vision_text(text: str) -> bool:
+    """Reject empty or obviously corrupt model output such as a run of '@' characters."""
+    compact = re.sub(r"\s+", "", text)
+    if not compact:
+        return False
+    if not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", compact):
+        return False
+    return not (len(compact) >= 4 and len(set(compact)) == 1)
+
+
+def _local_ollama_url(base_url: str, endpoint: str) -> str | None:
+    """Return a native Ollama endpoint only for an explicitly local /v1 endpoint."""
+    parsed = urlsplit(base_url)
+    if parsed.hostname not in LOCAL_OLLAMA_HOSTS or parsed.path.rstrip("/") != "/v1":
+        return None
+    return urlunsplit((parsed.scheme, parsed.netloc, endpoint, "", ""))
+
+
+def _reset_local_ollama_model(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    model: str,
+    headers: dict[str, str],
+) -> bool:
+    """Unload a bad local runner so the following visual request starts cleanly."""
+    reset_url = _local_ollama_url(base_url, "/api/generate")
+    if reset_url is None:
+        return False
+    try:
+        response = client.post(
+            reset_url,
+            headers=headers,
+            json={"model": model, "keep_alive": 0},
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        logger.warning("Could not reset the local Ollama vision runner", exc_info=True)
+        return False
+    return True
+
+
+def _native_ollama_vision_text(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    model: str,
+    headers: dict[str, str],
+    parts: Sequence[dict[str, object]],
+) -> str:
+    """Use CPU-only native Ollama as a recovery path for a broken GPU visual runner."""
+    chat_url = _local_ollama_url(base_url, "/api/chat")
+    if chat_url is None:
+        return ""
+
+    text_parts: list[str] = []
+    images: list[str] = []
+    for part in parts:
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            text_parts.append(part["text"])
+            continue
+        image_url = part.get("image_url")
+        if not isinstance(image_url, dict):
+            continue
+        image_data_url = image_url.get("url")
+        if not isinstance(image_data_url, str) or "," not in image_data_url:
+            continue
+        images.append(image_data_url.split(",", 1)[1])
+
+    if not images:
+        return ""
+
+    try:
+        response = client.post(
+            chat_url,
+            headers=headers,
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "你是准确、克制的视觉文件解析器。"},
+                    {
+                        "role": "user",
+                        "content": "\n\n".join(text_parts),
+                        "images": images,
+                    },
+                ],
+                "stream": False,
+                "keep_alive": 0,
+                "options": {
+                    "num_gpu": 0,
+                    "num_ctx": 4096,
+                    "num_predict": MAX_VISION_RESPONSE_TOKENS,
+                    "temperature": 0.2,
+                },
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["message"]["content"]
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        logger.warning("CPU vision fallback failed", exc_info=True)
+        return ""
+    return _content_text(content)
+
+
+
 def _vision_description(attachments: Sequence[Attachment]) -> str:
     """Use a separately configured vision model so the text chat model stays unchanged."""
     settings = _vision_settings()
@@ -496,35 +649,66 @@ def _vision_description(attachments: Sequence[Attachment]) -> str:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "你是准确、克制的视觉文件解析器。"},
+            {"role": "user", "content": parts},
+        ],
+        "max_tokens": MAX_VISION_RESPONSE_TOKENS,
+        "stream": False,
+    }
+
+    vision_url = f"{base_url}/chat/completions"
+
     try:
         with httpx.Client(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
-            response = client.post(
-                f"{base_url}/chat/completions",
+            # First attempt. Network errors, HTTP failures, and invalid JSON are
+            # converted to an empty result so local recovery can still continue.
+            text = _request_vision_text(
+                client,
+                url=vision_url,
                 headers=headers,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": "你是准确、克制的视觉文件解析器。"},
-                        {"role": "user", "content": parts},
-                    ],
-                    "max_tokens": MAX_VISION_RESPONSE_TOKENS,
-                    "stream": False,
-                },
+                payload=payload,
             )
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
-        return ""
+            if _usable_vision_text(text):
+                return text
 
-    if isinstance(content, str):
-        return content.strip()[:MAX_EXTRACTED_CHARACTERS]
-    if isinstance(content, list):
-        text = "\n".join(
-            str(part.get("text", "")).strip()
-            for part in content
-            if isinstance(part, dict) and isinstance(part.get("text"), str)
-        )
-        return text.strip()[:MAX_EXTRACTED_CHARACTERS]
+            # A local Ollama GPU runner can occasionally become unhealthy and
+            # return corrupt output. Unload it and retry once from a clean runner.
+            if _reset_local_ollama_model(
+                client,
+                base_url=base_url,
+                model=model,
+                headers=headers,
+            ):
+                text = _request_vision_text(
+                    client,
+                    url=vision_url,
+                    headers=headers,
+                    payload=payload,
+                )
+                if _usable_vision_text(text):
+                    return text
+
+            # If the normal local runner is still unusable, try Ollama's native
+            # chat API once with GPU disabled.
+            fallback_text = _native_ollama_vision_text(
+                client,
+                base_url=base_url,
+                model=model,
+                headers=headers,
+                parts=parts,
+            )
+            if _usable_vision_text(fallback_text):
+                return fallback_text
+
+    except (TypeError, ValueError):
+        logger.warning("Vision analysis failed", exc_info=True)
+
+    logger.warning(
+        "Vision model returned no usable description; it will not be injected into chat"
+    )
     return ""
 
 

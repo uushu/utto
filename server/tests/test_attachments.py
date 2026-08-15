@@ -5,6 +5,7 @@ import io
 from typing import Any
 
 import av
+import httpx
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from PIL import Image
@@ -320,6 +321,155 @@ def test_image_description_is_injected_for_the_chat_model(db, monkeypatch) -> No
     assert _VisionClient.request["url"] == "https://vision.example.test/v1/chat/completions"
     assert _VisionClient.request["headers"]["Authorization"] == "Bearer vision-key"
     assert _VisionClient.request["json"]["max_tokens"] == MAX_VISION_RESPONSE_TOKENS
+
+
+class _RecoveringVisionResponse:
+    def __init__(self, data: dict[str, Any]):
+        self.data = data
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self.data
+
+
+class _RecoveringVisionClient:
+    requests: list[dict[str, Any]] = []
+    chat_requests = 0
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        pass
+
+    def __enter__(self) -> "_RecoveringVisionClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def post(self, url: str, **kwargs: Any) -> _RecoveringVisionResponse:
+        type(self).requests.append({"url": url, **kwargs})
+        if url.endswith("/v1/chat/completions"):
+            type(self).chat_requests += 1
+            content = "@@@@@@@@" if type(self).chat_requests == 1 else "画面里有一只猫。"
+            return _RecoveringVisionResponse({"choices": [{"message": {"content": content}}]})
+        if url.endswith("/api/generate"):
+            return _RecoveringVisionResponse({"done": True})
+        raise AssertionError(f"Unexpected vision URL: {url}")
+
+
+def test_corrupt_local_vision_reply_resets_and_retries(db, monkeypatch) -> None:
+    image = io.BytesIO()
+    Image.new("RGB", (4, 4), (12, 34, 56)).save(image, format="JPEG")
+    attachment = Attachment(
+        id="k" * 32,
+        relationship_id="r" * 32,
+        filename="cat.jpg",
+        mime_type="image/jpeg",
+        size_bytes=len(image.getvalue()),
+        content=image.getvalue(),
+    )
+    db.add(attachment)
+    db.commit()
+    _RecoveringVisionClient.requests = []
+    _RecoveringVisionClient.chat_requests = 0
+    monkeypatch.setenv("UTTO_VISION_BASE_URL", "http://host.docker.internal:11434/v1")
+    monkeypatch.setenv("UTTO_VISION_MODEL", "qwen2.5vl:3b")
+    monkeypatch.setattr(attachments_module.httpx, "Client", _RecoveringVisionClient)
+
+    context = attachment_context(db, "r" * 32, [attachment.id])
+
+    assert "画面里有一只猫。" in context
+    assert [request["url"] for request in _RecoveringVisionClient.requests] == [
+        "http://host.docker.internal:11434/v1/chat/completions",
+        "http://host.docker.internal:11434/api/generate",
+        "http://host.docker.internal:11434/v1/chat/completions",
+    ]
+
+
+class _TimeoutThenRecoverVisionClient:
+    requests: list[dict[str, Any]] = []
+    chat_requests = 0
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        pass
+
+    def __enter__(self) -> "_TimeoutThenRecoverVisionClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def post(self, url: str, **kwargs: Any) -> _RecoveringVisionResponse:
+        type(self).requests.append({"url": url, **kwargs})
+
+        if url.endswith("/v1/chat/completions"):
+            type(self).chat_requests += 1
+
+            if type(self).chat_requests == 1:
+                raise httpx.ReadTimeout("vision timeout")
+
+            return _RecoveringVisionResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "恢复后识别到一只猫。"
+                            }
+                        }
+                    ]
+                }
+            )
+
+        if url.endswith("/api/generate"):
+            return _RecoveringVisionResponse({"done": True})
+
+        raise AssertionError(f"Unexpected vision URL: {url}")
+
+
+def test_vision_timeout_resets_and_retries(db, monkeypatch) -> None:
+    image = io.BytesIO()
+    Image.new("RGB", (4, 4), (12, 34, 56)).save(image, format="JPEG")
+    attachment = Attachment(
+        id="m" * 32,
+        relationship_id="r" * 32,
+        filename="cat.jpg",
+        mime_type="image/jpeg",
+        size_bytes=len(image.getvalue()),
+        content=image.getvalue(),
+    )
+    db.add(attachment)
+    db.commit()
+
+    _TimeoutThenRecoverVisionClient.requests = []
+    _TimeoutThenRecoverVisionClient.chat_requests = 0
+
+    monkeypatch.setenv(
+        "UTTO_VISION_BASE_URL",
+        "http://host.docker.internal:11434/v1",
+    )
+    monkeypatch.setenv(
+        "UTTO_VISION_MODEL",
+        "qwen2.5vl:3b",
+    )
+    monkeypatch.setattr(
+        attachments_module.httpx,
+        "Client",
+        _TimeoutThenRecoverVisionClient,
+    )
+
+    context = attachment_context(
+        db,
+        "r" * 32,
+        [attachment.id],
+    )
+
+    assert "恢复后识别到一只猫。" in context
+    assert [request["url"] for request in _TimeoutThenRecoverVisionClient.requests] == [
+        "http://host.docker.internal:11434/v1/chat/completions",
+        "http://host.docker.internal:11434/api/generate",
+        "http://host.docker.internal:11434/v1/chat/completions",
+    ]
 
 
 def test_audio_transcript_is_injected_for_the_chat_model(db, monkeypatch) -> None:
