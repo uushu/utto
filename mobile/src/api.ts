@@ -216,7 +216,9 @@ export async function uploadAttachment(
     throw new Error('文件不能超过 50 MB');
   }
   const source = new File(file.uri);
-  const binaryBody = await source.arrayBuffer();
+  // Keep the attachment in the native file layer instead of copying the full
+  // byte array into the JavaScript heap before uploading it.
+  const binaryBody = { byteLength: source.size, body: source };
   if (binaryBody.byteLength === 0) {
     throw new Error('无法读取这个文件');
   }
@@ -234,7 +236,7 @@ export async function uploadAttachment(
       Authorization: `Bearer ${token}`,
       'Content-Type': mimeType,
     },
-    body: binaryBody,
+    body: binaryBody.body,
   });
   const raw = await response.text();
   let responseBody: unknown = null;

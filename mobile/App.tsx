@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
@@ -12,7 +12,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -63,6 +62,7 @@ type PendingAttachment = {
   mimeType: string | null;
   size: number | null;
 };
+type AttachmentPickerKind = 'camera' | 'photos' | 'files';
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -693,11 +693,11 @@ function ChatScreen({
   const [draft, setDraft] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
-  const [pickerBusy, setPickerBusy] = useState(false);
   const [chatStatus, setChatStatus] = useState<ChatStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const listRef = useRef<ScrollView>(null);
+  const pickerInFlightRef = useRef(false);
   const initialAnchorCompletedRef = useRef(false);
   const initialAnchorQueuedRef = useRef(false);
   const listHasLayoutRef = useRef(false);
@@ -942,35 +942,57 @@ function ChatScreen({
     setError(null);
   }
 
+  function requestAttachmentPicker(kind: AttachmentPickerKind) {
+    if (pickerInFlightRef.current) {
+      return;
+    }
+    pickerInFlightRef.current = true;
+    setAttachmentMenuVisible(false);
+    void openAttachmentPicker(kind);
+  }
+
+  async function openAttachmentPicker(kind: AttachmentPickerKind) {
+    try {
+      if (kind === 'files') {
+        await pickFromFiles();
+      } else if (kind === 'photos') {
+        await pickFromPhotos();
+      } else {
+        await takePhoto();
+      }
+    } finally {
+      pickerInFlightRef.current = false;
+    }
+  }
+
   async function pickFromFiles() {
     setAttachmentMenuVisible(false);
-    setPickerBusy(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: true,
-        multiple: true,
-        type: '*/*',
-      });
-      if (!result.canceled) {
-        addPendingAttachments(
-          result.assets.map((selected) => ({
-            uri: selected.uri,
-            name: selected.name,
-            mimeType: selected.mimeType ?? null,
-            size: selected.size ?? null,
-          })),
-        );
+      // This API uses iOS's document picker in copy mode and returns a File
+      // that can be uploaded immediately. It also avoids the DocumentPicker
+      // presentation path that can fail after a React Native modal closes.
+      const selected = await File.pickFileAsync();
+      const files = Array.isArray(selected) ? selected : [selected];
+      addPendingAttachments(
+        files.map((item) => ({
+          uri: item.uri,
+          name: item.uri.split('/').pop() || '文件',
+          mimeType: item.type || null,
+          size: item.size || null,
+        })),
+      );
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : '';
+      if (/cancelled|canceled/i.test(message)) {
+        return;
       }
-    } catch {
+      console.warn('Unable to open file picker', caught);
       setError('无法读取这个文件');
-    } finally {
-      setPickerBusy(false);
     }
   }
 
   async function pickFromPhotos() {
     setAttachmentMenuVisible(false);
-    setPickerBusy(true);
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -996,14 +1018,11 @@ function ChatScreen({
       }
     } catch {
       setError('无法读取照片');
-    } finally {
-      setPickerBusy(false);
     }
   }
 
   async function takePhoto() {
     setAttachmentMenuVisible(false);
-    setPickerBusy(true);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -1028,13 +1047,11 @@ function ChatScreen({
       }
     } catch {
       setError('无法打开相机');
-    } finally {
-      setPickerBusy(false);
     }
   }
 
   function pickAttachment() {
-    if (chatStatus === 'idle') {
+    if (chatStatus === 'idle' && !pickerInFlightRef.current) {
       setAttachmentMenuVisible(true);
     }
   }
@@ -1197,7 +1214,7 @@ function ChatScreen({
 
       {error ? (
         <View style={styles.inlineError}>
-          <Text style={styles.inlineErrorText}>发送失败 · {error}</Text>
+          <Text style={styles.inlineErrorText}>{error}</Text>
         </View>
       ) : null}
 
@@ -1297,12 +1314,7 @@ function ChatScreen({
           </View>
         </Animated.View>
       </View>
-      <Modal
-        visible={attachmentMenuVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAttachmentMenuVisible(false)}
-      >
+      {attachmentMenuVisible ? (
         <View style={styles.attachmentModalRoot}>
           <Pressable
             accessibilityRole="button"
@@ -1312,15 +1324,9 @@ function ChatScreen({
           />
           <View style={styles.attachmentSheet}>
             <View style={styles.attachmentSheetHandle} />
-            {pickerBusy ? (
-              <ActivityIndicator color={colors.graphiteDark} style={styles.attachmentPickerBusy} />
-            ) : (
-              <>
-                <AttachmentOption title="相机" onPress={() => void takePhoto()} />
-                <AttachmentOption title="照片" onPress={() => void pickFromPhotos()} />
-                <AttachmentOption title="文件" onPress={() => void pickFromFiles()} />
-              </>
-            )}
+            <AttachmentOption title="相机" onPress={() => requestAttachmentPicker('camera')} />
+            <AttachmentOption title="照片" onPress={() => requestAttachmentPicker('photos')} />
+            <AttachmentOption title="文件" onPress={() => requestAttachmentPicker('files')} />
             <Pressable
               onPress={() => setAttachmentMenuVisible(false)}
               style={({ pressed }) => [styles.attachmentCancel, pressed && styles.buttonPressed]}
@@ -1329,7 +1335,7 @@ function ChatScreen({
             </Pressable>
           </View>
         </View>
-      </Modal>
+      ) : null}
     </View>
   );
 }
@@ -2510,7 +2516,11 @@ const styles = StyleSheet.create({
   },
   pendingAttachmentName: { flex: 1, color: colors.graphiteDark, fontFamily: uiFont, fontSize: 11 },
   pendingAttachmentRemove: { marginLeft: 8, color: colors.muted, fontFamily: uiFontMedium, fontSize: 11 },
-  attachmentModalRoot: { flex: 1, justifyContent: 'flex-end' },
+  attachmentModalRoot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
+    justifyContent: 'flex-end',
+  },
   attachmentModalScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(39, 36, 31, 0.28)' },
   attachmentSheet: {
     paddingHorizontal: 18,
@@ -2525,7 +2535,6 @@ const styles = StyleSheet.create({
   attachmentSheetHandle: { width: 36, height: 4, marginBottom: 10, alignSelf: 'center', borderRadius: 2, backgroundColor: colors.faint },
   attachmentOption: { minHeight: 54, marginTop: 8, paddingHorizontal: 15, justifyContent: 'center', borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   attachmentOptionTitle: { color: colors.ink, fontFamily: chatFontMedium, fontSize: 16 },
-  attachmentPickerBusy: { marginVertical: 40 },
   attachmentCancel: { minHeight: 45, marginTop: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#ECEAE5' },
   attachmentCancelText: { color: colors.graphiteDark, fontFamily: uiFontMedium, fontSize: 14 },
   composerInputWrap: { flex: 1 },
