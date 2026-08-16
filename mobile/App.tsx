@@ -243,18 +243,33 @@ function UttoApp() {
     setActiveTab('chat');
   }
 
-  async function retryConnection() {
-    if (!apiUrl || !token || reconnecting) {
+  async function connectToServer(nextApiUrl: string) {
+    if (!token || reconnecting) {
+      return;
+    }
+
+    const cleanUrl = nextApiUrl.trim().replace(/\/+$/, '');
+
+    if (!cleanUrl) {
+      setConnectionError('请输入服务器地址');
       return;
     }
 
     setReconnecting(true);
     setConnectionError(null);
+
     try {
-      const data = await getBootstrap(apiUrl, token);
+      const data = await getBootstrap(cleanUrl, token);
+
+      // 连接成功后才保存新地址，避免输错地址覆盖原配置
+      await saveSession(cleanUrl, token);
+
+      setApiUrl(cleanUrl);
       setBootstrap(data);
     } catch (caught) {
-      setConnectionError(caught instanceof Error ? caught.message : '暂时无法连接服务器');
+      setConnectionError(
+        caught instanceof Error ? caught.message : '无法连接服务器',
+      );
     } finally {
       setReconnecting(false);
     }
@@ -262,7 +277,7 @@ function UttoApp() {
 
   async function disconnect() {
     setBootstrap(null);
-    setConnectionError('已暂时断开连接，配对信息仍保留。');
+    setConnectionError(null);
     setActiveTab('chat');
   }
 
@@ -321,7 +336,7 @@ function UttoApp() {
         apiUrl={apiUrl}
         error={connectionError}
         busy={reconnecting}
-        onRetry={() => void retryConnection()}
+        onConnect={(nextApiUrl) => void connectToServer(nextApiUrl)}
       />
     );
   }
@@ -584,44 +599,79 @@ function ReconnectScreen({
   apiUrl,
   error,
   busy,
-  onRetry,
+  onConnect,
 }: {
   apiUrl: string;
   error: string | null;
   busy: boolean;
-  onRetry: () => void;
+  onConnect: (apiUrl: string) => void;
 }) {
+  const [serverUrl, setServerUrl] = useState(apiUrl);
+
+  function submit() {
+    const cleanUrl = serverUrl.trim().replace(/\/+$/, '');
+
+    if (!cleanUrl || busy) {
+      return;
+    }
+
+    Keyboard.dismiss();
+    onConnect(cleanUrl);
+  }
+
   return (
     <SafeAreaView style={styles.pairingSafeArea}>
-      <View style={styles.reconnectContent}>
-        <Text style={styles.pairingKicker}>NEST · PRIVATE ROOM</Text>
-        <AnimatedBrand />
-        <Text style={styles.pairingSubtitle}>
-          已保存连接信息。服务器恢复后，点击重新连接即可。
-        </Text>
+      <KeyboardAvoidingView
+        style={styles.pairingKeyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.pairingContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        >
+          <AnimatedBrand />
 
-        <View style={styles.formCard}>
-          <Text style={styles.formStamp}>SAVED CONNECTION</Text>
-          <Text style={styles.reconnectLabel}>当前服务器</Text>
-          <Text selectable style={styles.reconnectUrl}>{apiUrl}</Text>
-          {error ? <Text style={styles.errorText}>暂时无法连接 · {error}</Text> : null}
-          <Pressable
-            disabled={busy}
-            onPress={onRetry}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-              busy && styles.buttonDisabled,
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryButtonText}>重新连接</Text>
-            )}
-          </Pressable>
-        </View>
-      </View>
+          <Text style={styles.pairingTitle}>重新连接</Text>
+
+          <View style={styles.formCard}>
+            <Text style={styles.inputLabel}>服务器地址</Text>
+
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              placeholder="http://192.168.1.16:8000"
+              placeholderTextColor={colors.faint}
+              style={styles.formInput}
+              value={serverUrl}
+              onChangeText={setServerUrl}
+              onSubmitEditing={submit}
+              returnKeyType="go"
+            />
+
+            {error ? (
+              <Text style={styles.errorText}>{error}</Text>
+            ) : null}
+
+            <Pressable
+              disabled={busy || !serverUrl.trim()}
+              onPress={submit}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.buttonPressed,
+                (busy || !serverUrl.trim()) && styles.buttonDisabled,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryButtonText}>连接</Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -1176,8 +1226,8 @@ function ChatScreen({
         >
           {messages.map((item) =>
             chatStatus === 'streaming' &&
-            item.role === 'assistant' &&
-            item.id === latestMessageId ? (
+              item.role === 'assistant' &&
+              item.id === latestMessageId ? (
               <StreamingMessage
                 key={item.id}
                 chatMessage={item}
@@ -1268,38 +1318,38 @@ function ChatScreen({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="上传文件"
-            onPress={pickAttachment}
+              onPress={pickAttachment}
               style={({ pressed }) => [styles.roundTool, pressed && styles.buttonPressed]}
             >
               <Text style={styles.roundToolText}>+</Text>
             </Pressable>
-          <Animated.View style={[styles.composerInputWrap, { height: composerHeight }]}>
-            <TextInput
-              multiline
-              maxLength={4000}
-              placeholder="Message..."
-              placeholderTextColor={colors.faint}
-              style={styles.composerInput}
-              value={draft}
-              onChangeText={setDraft}
-              onContentSizeChange={(event) =>
-                animateComposerHeight(event.nativeEvent.contentSize.height + 2)
-              }
-              onFocus={() => {
-                animateComposer(true);
-                if (nearBottomRef.current) {
-                  runScrollToBottom(false);
+            <Animated.View style={[styles.composerInputWrap, { height: composerHeight }]}>
+              <TextInput
+                multiline
+                maxLength={4000}
+                placeholder="Message..."
+                placeholderTextColor={colors.faint}
+                style={styles.composerInput}
+                value={draft}
+                onChangeText={setDraft}
+                onContentSizeChange={(event) =>
+                  animateComposerHeight(event.nativeEvent.contentSize.height + 2)
                 }
-              }}
-              onBlur={() => animateComposer(false)}
-              textAlignVertical="top"
+                onFocus={() => {
+                  animateComposer(true);
+                  if (nearBottomRef.current) {
+                    runScrollToBottom(false);
+                  }
+                }}
+                onBlur={() => animateComposer(false)}
+                textAlignVertical="top"
+              />
+            </Animated.View>
+            <SendButton
+              disabled={(!draft.trim() && pendingAttachments.length === 0) || chatStatus !== 'idle'}
+              sending={chatStatus !== 'idle'}
+              onPress={() => void submit()}
             />
-          </Animated.View>
-          <SendButton
-            disabled={(!draft.trim() && pendingAttachments.length === 0) || chatStatus !== 'idle'}
-            sending={chatStatus !== 'idle'}
-            onPress={() => void submit()}
-          />
           </View>
           <View style={styles.composerBottomRow}>
             <View style={styles.roundTool}>
@@ -1532,10 +1582,10 @@ function StreamingMessage({
       <View style={styles.assistantMessageRow}>
         <ChatAvatar uri={avatarUri} label={displayName} side="assistant" />
         <View style={styles.assistantMessageContent}>
-        <Text style={styles.assistantMessageText}>
-          {chatMessage.content}
-          <Animated.Text style={[styles.streamingCursor, { opacity: cursorOpacity }]}>▋</Animated.Text>
-        </Text>
+          <Text style={styles.assistantMessageText}>
+            {chatMessage.content}
+            <Animated.Text style={[styles.streamingCursor, { opacity: cursorOpacity }]}>▋</Animated.Text>
+          </Text>
         </View>
       </View>
     </View>
