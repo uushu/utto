@@ -23,6 +23,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /app
 
 COPY --from=builder /wheels /wheels
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 RUN python -m pip install --no-index --find-links=/wheels utto-server==0.1.0 \
     && rm -rf /wheels \
@@ -33,4 +35,4 @@ USER utto
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "utto_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && exec python -m uvicorn utto_server.main:app --host 0.0.0.0 --port 8000"]

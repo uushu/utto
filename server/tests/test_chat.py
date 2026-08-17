@@ -1,5 +1,6 @@
 """Tests for the authenticated DeepSeek chat proxy."""
 
+import base64
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -107,3 +108,113 @@ def test_chat_proxies_recent_context_to_deepseek(
     assert payload["messages"][0]["role"] == "system"
     assert "熠" in payload["messages"][0]["content"]
     assert payload["messages"][-1] == {"role": "user", "content": "今天有点累。"}
+
+
+def test_chat_forwards_uploaded_document_content(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(chat_router.httpx, "Client", FakeClient)
+    upload = client.post(
+        "/v1/attachments",
+        headers=auth_headers,
+        json={
+            "filename": "important.txt",
+            "mime_type": "text/plain",
+            "content_base64": base64.b64encode("只喝无糖豆浆".encode()).decode(),
+        },
+    )
+    assert upload.status_code == 201
+
+    response = client.post(
+        "/v1/chat",
+        headers=auth_headers,
+        json={
+            "messages": [{"role": "user", "content": "记住这个"}],
+            "attachments": [{"id": upload.json()["id"]}],
+        },
+    )
+
+    assert response.status_code == 200
+    request = FakeClient.last_request
+    assert request is not None
+    assert "important.txt" in request["json"]["messages"][0]["content"]
+    assert "只喝无糖豆浆" in request["json"]["messages"][0]["content"]
+
+
+def test_attachment_only_message_asks_the_model_to_inspect_the_file(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(chat_router.httpx, "Client", FakeClient)
+    upload = client.post(
+        "/v1/attachments",
+        headers=auth_headers,
+        json={
+            "filename": "note.txt",
+            "mime_type": "text/plain",
+            "content_base64": base64.b64encode("附件内容".encode()).decode(),
+        },
+    )
+    assert upload.status_code == 201
+
+    response = client.post(
+        "/v1/chat",
+        headers=auth_headers,
+        json={
+            "messages": [{"role": "user", "content": "请查看我附带的文件。"}],
+            "attachments": [{"id": upload.json()["id"]}],
+        },
+    )
+
+    assert response.status_code == 200
+    request = FakeClient.last_request
+    assert request is not None
+    assert request["json"]["messages"][-1] == {
+        "role": "user",
+        "content": "请查看我附带的文件。",
+    }
+
+
+def test_stream_chat_forwards_uploaded_document_content(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    captured: dict[str, Any] = {}
+
+    def fake_stream_deepseek(**kwargs: Any):
+        captured.update(kwargs)
+        yield 'data: {"content":"收到"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(chat_router, "_stream_deepseek", fake_stream_deepseek)
+    upload = client.post(
+        "/v1/attachments",
+        headers=auth_headers,
+        json={
+            "filename": "stream-note.txt",
+            "mime_type": "text/plain",
+            "content_base64": base64.b64encode("流式附件内容".encode()).decode(),
+        },
+    )
+    assert upload.status_code == 201
+
+    response = client.post(
+        "/v1/chat/stream",
+        headers=auth_headers,
+        json={
+            "messages": [{"role": "user", "content": "看一下附件"}],
+            "attachments": [{"id": upload.json()["id"]}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "收到" in response.text
+    assert "stream-note.txt" in captured["payload"]["messages"][0]["content"]
+    assert "流式附件内容" in captured["payload"]["messages"][0]["content"]

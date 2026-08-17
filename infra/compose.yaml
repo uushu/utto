@@ -9,14 +9,22 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:?DEEPSEEK_BASE_URL is required}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:?DEEPSEEK_MODEL is required}
+      UTTO_VISION_BASE_URL: ${UTTO_VISION_BASE_URL:-}
+      UTTO_VISION_API_KEY: ${UTTO_VISION_API_KEY:-}
+      UTTO_VISION_MODEL: ${UTTO_VISION_MODEL:-}
+      UTTO_AUDIO_MODEL: ${UTTO_AUDIO_MODEL:-}
+      UTTO_AUDIO_DEVICE: ${UTTO_AUDIO_DEVICE:-cpu}
+      UTTO_AUDIO_COMPUTE_TYPE: ${UTTO_AUDIO_COMPUTE_TYPE:-int8}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${UTTO_API_BIND:-127.0.0.1}:${UTTO_API_PORT:?UTTO_API_PORT is required}:8000"
+      - "${UTTO_API_PORT:?UTTO_API_PORT is required}:8000"
+    volumes:
+      - ../models/whisper:/models/whisper:ro
     networks:
       - backend
     healthcheck:

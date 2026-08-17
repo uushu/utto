@@ -97,7 +97,7 @@ docker compose --env-file .env -f infra/compose.yaml ps
 Invoke-RestMethod http://127.0.0.1:8000/v1/health
 ```
 
-### 2. 生成一次性配对码
+### 2. 首次连接时生成一次性配对码
 
 配对码必须写入 Docker 中当前运行的 PostgreSQL，因此直接在 `api` 容器执行：
 
@@ -105,6 +105,14 @@ Invoke-RestMethod http://127.0.0.1:8000/v1/health
 Set-Location D:\utto_app
 docker compose --env-file .env -f infra/compose.yaml exec api utto-pairing-code
 ```
+
+也可以直接双击或在 PowerShell 中运行项目自带脚本：
+
+```powershell
+.\scripts\new-pairing-code.ps1
+```
+
+配对成功后，App 会把设备令牌保存在 iPhone 的安全存储中。以后只是重启 App、后端或电脑时，不需要再次输入配对码；只有卸载/清除 App 数据，或在连接页主动选择“更换服务器 / 重新配对”时，才需要生成新的配对码。
 
 ### 3. 启动 Expo 客户端
 
