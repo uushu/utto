@@ -481,6 +481,7 @@ def _vision_response_text(data: object) -> str:
         return ""
     return _content_text(content)
 
+
 def _request_vision_text(
     client: httpx.Client,
     *,
@@ -500,6 +501,7 @@ def _request_vision_text(
     except (httpx.HTTPError, ValueError):
         logger.warning("Vision completion request failed", exc_info=True)
         return ""
+
 
 def _usable_vision_text(text: str) -> bool:
     """Reject empty or obviously corrupt model output such as a run of '@' characters."""
@@ -606,7 +608,6 @@ def _native_ollama_vision_text(
     return _content_text(content)
 
 
-
 def _vision_description(attachments: Sequence[Attachment]) -> str:
     """Use a separately configured vision model so the text chat model stays unchanged."""
     settings = _vision_settings()
@@ -706,9 +707,7 @@ def _vision_description(attachments: Sequence[Attachment]) -> str:
     except (TypeError, ValueError):
         logger.warning("Vision analysis failed", exc_info=True)
 
-    logger.warning(
-        "Vision model returned no usable description; it will not be injected into chat"
-    )
+    logger.warning("Vision model returned no usable description; it will not be injected into chat")
     return ""
 
 
@@ -752,9 +751,7 @@ def attachment_context(
                 continue
             transcript = transcript[:remaining]
             label = (
-                "用户附带视频的音频转写"
-                if is_video_attachment(attachment)
-                else "用户附带音频转写"
+                "用户附带视频的音频转写" if is_video_attachment(attachment) else "用户附带音频转写"
             )
             sections.append(f"{label}：{attachment.filename}\n---\n{transcript}\n---")
             total_characters += len(transcript)

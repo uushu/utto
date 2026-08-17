@@ -89,9 +89,10 @@ def test_only_explicit_long_term_statements_are_sent_for_extraction() -> None:
 
 
 def test_extraction_candidate_requires_a_stable_dedupe_key() -> None:
-    assert _parse_candidates(
-        '[{"category":"boundary","content":"用户不喜欢被追问","importance":4}]'
-    ) == []
+    assert (
+        _parse_candidates('[{"category":"boundary","content":"用户不喜欢被追问","importance":4}]')
+        == []
+    )
     candidates = _parse_candidates(
         '[{"category":"boundary","key":"boundary.follow_up","content":"用户不喜欢被追问","importance":4,"sensitivity":"standard"}]'
     )

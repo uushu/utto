@@ -54,7 +54,8 @@ async def upload_attachment(
         filename=attachment.filename,
         mime_type=attachment.mime_type,
         size_bytes=attachment.size_bytes,
-        readable_as_text=is_text_attachment(attachment) or (
+        readable_as_text=is_text_attachment(attachment)
+        or (
             (is_image_attachment(attachment) or is_video_attachment(attachment))
             and vision_enabled()
         )

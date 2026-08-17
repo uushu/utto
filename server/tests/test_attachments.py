@@ -410,15 +410,7 @@ class _TimeoutThenRecoverVisionClient:
                 raise httpx.ReadTimeout("vision timeout")
 
             return _RecoveringVisionResponse(
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": "恢复后识别到一只猫。"
-                            }
-                        }
-                    ]
-                }
+                {"choices": [{"message": {"content": "恢复后识别到一只猫。"}}]}
             )
 
         if url.endswith("/api/generate"):
@@ -488,29 +480,13 @@ class _CpuFallbackVisionClient:
         type(self).requests.append({"url": url, **kwargs})
 
         if url.endswith("/v1/chat/completions"):
-            return _RecoveringVisionResponse(
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": "@@@@@@@@"
-                            }
-                        }
-                    ]
-                }
-            )
+            return _RecoveringVisionResponse({"choices": [{"message": {"content": "@@@@@@@@"}}]})
 
         if url.endswith("/api/generate"):
             return _RecoveringVisionResponse({"done": True})
 
         if url.endswith("/api/chat"):
-            return _RecoveringVisionResponse(
-                {
-                    "message": {
-                        "content": "CPU 回退成功识别到一只猫。"
-                    }
-                }
-            )
+            return _RecoveringVisionResponse({"message": {"content": "CPU 回退成功识别到一只猫。"}})
 
         raise AssertionError(f"Unexpected vision URL: {url}")
 
@@ -566,10 +542,7 @@ def test_corrupt_vision_falls_back_to_cpu_ollama(db, monkeypatch) -> None:
     assert cpu_request["json"]["stream"] is False
     assert cpu_request["json"]["options"]["num_gpu"] == 0
     assert cpu_request["json"]["options"]["num_ctx"] == 4096
-    assert (
-        cpu_request["json"]["options"]["num_predict"]
-        == MAX_VISION_RESPONSE_TOKENS
-    )
+    assert cpu_request["json"]["options"]["num_predict"] == MAX_VISION_RESPONSE_TOKENS
 
 
 def test_audio_transcript_is_injected_for_the_chat_model(db, monkeypatch) -> None:

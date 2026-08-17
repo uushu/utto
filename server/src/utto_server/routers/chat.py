@@ -88,10 +88,7 @@ def _chat_payload(body: ChatRequest, system_prompt: str, model: str, *, stream: 
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            *[
-                {"role": message.role, "content": message.content}
-                for message in body.messages
-            ],
+            *[{"role": message.role, "content": message.content} for message in body.messages],
         ],
         "thinking": {"type": "disabled"},
         "stream": stream,
